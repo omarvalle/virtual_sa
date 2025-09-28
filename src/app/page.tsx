@@ -1,5 +1,7 @@
 import type { CSSProperties } from 'react';
+import { CanvasCommandPanel } from '@/components/canvas/CanvasCommandPanel';
 import { VoiceSessionPanel } from '@/components/voice/VoiceSessionPanel';
+import { MermaidPreview } from '@/components/canvas/MermaidPreview';
 
 const containerStyle: CSSProperties = {
   padding: '3rem',
@@ -21,6 +23,8 @@ export default function HomePage() {
 
       <section style={{ display: 'grid', gap: '1.5rem' }}>
         <VoiceSessionPanel />
+        <CanvasCommandPanel />
+        <MermaidPreview sessionId="primary-session" />
 
         <article style={{ padding: '1.5rem', borderRadius: '1rem', background: '#0f172a' }}>
           <h2 style={{ fontSize: '1.5rem', marginBottom: '0.75rem' }}>Upcoming Integrations</h2>
