@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { readCanvasCommands } from '@/lib/canvas/server';
 import type { CanvasCommand } from '@/lib/canvas/types';
+import { renderMermaidDiagram } from '@/lib/canvas/mermaidRenderer';
 
 function collectLatestMermaidCommand(commands: CanvasCommand[]): CanvasCommand | null {
   for (let i = commands.length - 1; i >= 0; i -= 1) {
@@ -19,15 +20,44 @@ export async function GET(request: Request) {
   const mermaidCommand = collectLatestMermaidCommand(commands);
 
   if (!mermaidCommand) {
-    return NextResponse.json({ sessionId, svg: null });
+    return NextResponse.json({ sessionId, svg: null, diagram: null });
   }
 
-  const svg = `<!-- Mermaid placeholder render -->\n<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400">\n  <rect width="600" height="400" fill="#0f172a"/>\n  <text x="300" y="200" text-anchor="middle" fill="#e2e8f0" font-size="16">Mermaid rendering pending</text>\n  <text x="300" y="230" text-anchor="middle" fill="#94a3b8" font-size="12">Commands stored: ${commands.length}</text>\n</svg>`;
+  const diagram = typeof mermaidCommand.payload?.diagram === 'string' ? mermaidCommand.payload.diagram : null;
+  const title = typeof mermaidCommand.payload?.title === 'string' ? mermaidCommand.payload.title : null;
+  const focus = typeof mermaidCommand.payload?.focus === 'string' ? mermaidCommand.payload.focus : null;
 
-  return NextResponse.json({
-    sessionId,
-    svg,
-    commandId: mermaidCommand.id,
-    diagram: mermaidCommand.payload?.diagram ?? null,
-  });
+  if (!diagram) {
+    return NextResponse.json({
+      sessionId,
+      svg: null,
+      commandId: mermaidCommand.id,
+      diagram: null,
+      title,
+      focus,
+      error: 'Mermaid command missing diagram content.',
+    });
+  }
+
+  try {
+    const svg = await renderMermaidDiagram(diagram);
+    return NextResponse.json({
+      sessionId,
+      svg,
+      commandId: mermaidCommand.id,
+      diagram,
+      title,
+      focus,
+    });
+  } catch (error) {
+    return NextResponse.json({
+      sessionId,
+      svg: null,
+      commandId: mermaidCommand.id,
+      diagram,
+      title,
+      focus,
+      error: error instanceof Error ? error.message : 'Failed to render Mermaid diagram.',
+    });
+  }
 }

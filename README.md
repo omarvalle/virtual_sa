@@ -10,7 +10,7 @@ Voice-first web application that blends OpenAI's realtime agents with AWS Bedroc
 
 ## Getting Started
 
-1. **Install dependencies** (requires internet access):
+1. **Install dependencies** (requires internet access). After pulling new changes, rerun this command to install Mermaid and JS DOM rendering support:
    ```bash
    npm install
    ```
@@ -31,9 +31,10 @@ Voice-first web application that blends OpenAI's realtime agents with AWS Bedroc
 
 ## Voice Workflow Roadmap
 
-- Secure `/api/voice/token` now issues ephemeral OpenAI session credentials only to approved origins.
-- `/api/voice/sdp` proxies WebRTC offer/answer exchange so Browser clients do not call OpenAI directly.
-- Next step: stream control/channel events (transcripts, canvas commands) over the established data channel.
+- `/api/voice/token` now issues ephemeral OpenAI session credentials only to approved origins and seeds the session with canvas tool definitions.
+- `/api/voice/sdp` proxies WebRTC offer/answer exchange so browser clients do not call OpenAI directly.
+- Realtime control-channel events feed transcripts, debugging logs, and canvas commands into the UI.
+- Upcoming work: multi-modal tool responses (AWS Diagram MCP, deployment triggers) surfaced directly in the conversation.
 
 ## AWS AgentCore Roadmap
 
@@ -50,4 +51,4 @@ Use an `amazonlinux:2023` image with:
 
 ## Status
 
-The WebRTC scaffold now negotiates offers via server-side SDP relay and awaits OpenAI responses. Authorize the token endpoint and connect realtime credentials to begin live conversations, then extend with canvas tool integration and Claude deployment automation.
+Voice conversations stream transcripts in real time, the agent prompt is primed to call canvas tools, and Mermaid commands render to SVG previews. Next milestones include wiring AWS Diagram MCP output, Excalidraw scene management, and Claude-driven deployments.

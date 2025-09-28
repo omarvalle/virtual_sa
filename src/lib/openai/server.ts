@@ -1,8 +1,19 @@
 import { getEnv, getOptionalEnv } from '@/lib/config/env';
+import { VOICE_AGENT_INSTRUCTIONS, VOICE_AGENT_TOOLS } from '@/lib/openai/prompt';
+
+type RealtimeToolDefinition = {
+  type: 'function';
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+};
 
 type RealtimeSessionRequest = {
   model: string;
   voice?: string;
+  instructions?: string;
+  tools?: RealtimeToolDefinition[];
+  tool_choice?: 'auto' | 'none';
 };
 
 type RealtimeSessionResponse = {
@@ -26,6 +37,9 @@ export async function createOpenAIRealtimeSession(): Promise<{
 
   const payload: RealtimeSessionRequest = {
     model,
+    instructions: VOICE_AGENT_INSTRUCTIONS,
+    tools: VOICE_AGENT_TOOLS.map((tool) => ({ ...tool })) as RealtimeToolDefinition[],
+    tool_choice: 'auto',
   };
 
   if (voice) {

@@ -4,6 +4,7 @@ const SUPPORTED_COMMANDS: Record<string, CanvasCommandType> = {
   'canvas.update_mermaid': 'mermaid.update',
   'canvas.initialize_excalidraw': 'excalidraw.initialize',
   'canvas.patch_excalidraw': 'excalidraw.patch',
+  'canvas.update_aws_diagram': 'aws.diagram.update',
   'canvas.append_note': 'note.append',
   'canvas.set_metadata': 'metadata.set',
 };

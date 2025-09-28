@@ -2,6 +2,7 @@ export type CanvasCommandType =
   | 'mermaid.update'
   | 'excalidraw.initialize'
   | 'excalidraw.patch'
+  | 'aws.diagram.update'
   | 'note.append'
   | 'metadata.set';
 

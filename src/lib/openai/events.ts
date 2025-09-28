@@ -16,6 +16,36 @@ export type RealtimeEventHandlers = {
   onDebugEvent?: (event: RealtimeEvent) => void;
 };
 
+function extractTextDelta(delta: unknown): string {
+  if (typeof delta === 'string') {
+    return delta;
+  }
+  if (Array.isArray(delta)) {
+    return delta.join('');
+  }
+  if (typeof delta === 'object' && delta !== null) {
+    if ('text' in delta) {
+      const value = (delta as { text?: string | string[] }).text;
+      if (typeof value === 'string') {
+        return value;
+      }
+      if (Array.isArray(value)) {
+        return value.join('');
+      }
+    }
+    if ('arguments_delta' in delta) {
+      const value = (delta as { arguments_delta?: string | string[] }).arguments_delta;
+      if (typeof value === 'string') {
+        return value;
+      }
+      if (Array.isArray(value)) {
+        return value.join('');
+      }
+    }
+  }
+  return '';
+}
+
 export function parseRealtimeEvent(
   raw: string,
   sessionId: string,
@@ -48,8 +78,11 @@ export function parseRealtimeEvent(
   switch (type) {
     case 'conversation.item.input_audio_transcription.delta': {
       const itemId = parsed?.item?.id ?? parsed?.item_id;
-      if (itemId && typeof parsed?.delta?.text === 'string') {
-        handlers.onTranscriptionDelta?.(itemId, parsed.delta.text);
+      if (itemId) {
+        const deltaText = extractTextDelta(parsed?.delta);
+        if (deltaText) {
+          handlers.onTranscriptionDelta?.(itemId, deltaText);
+        }
       }
       break;
     }
@@ -62,8 +95,11 @@ export function parseRealtimeEvent(
     }
     case 'response.output_text.delta': {
       const responseId = parsed?.response?.id ?? parsed?.response_id;
-      if (responseId && typeof parsed?.delta === 'string') {
-        handlers.onResponseDelta?.(responseId, parsed.delta);
+      if (responseId) {
+        const deltaText = extractTextDelta(parsed?.delta);
+        if (deltaText) {
+          handlers.onResponseDelta?.(responseId, deltaText);
+        }
       }
       break;
     }
@@ -72,15 +108,6 @@ export function parseRealtimeEvent(
       const responseId = parsed?.response?.id ?? parsed?.response_id;
       if (responseId) {
         handlers.onResponseCompleted?.(responseId);
-      }
-      break;
-    }
-    case 'response.function_call_arguments.delta': {
-      const responseId = parsed?.response?.id ?? parsed?.response_id;
-      const callName = parsed?.name ?? parsed?.response?.output?.[0]?.content?.[0]?.name;
-      const argumentDelta = parsed?.arguments_delta;
-      if (responseId && callName && typeof argumentDelta === 'string') {
-        handlers.onResponseDelta?.(responseId, argumentDelta);
       }
       break;
     }

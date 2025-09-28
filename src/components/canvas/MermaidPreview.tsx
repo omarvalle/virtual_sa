@@ -22,6 +22,9 @@ const iframeStyle: CSSProperties = {
 export function MermaidPreview({ sessionId }: { sessionId: string }) {
   const [svg, setSvg] = useState<string | null>(null);
   const [diagram, setDiagram] = useState<string | null>(null);
+  const [title, setTitle] = useState<string | null>(null);
+  const [focus, setFocus] = useState<string | null>(null);
+  const [renderError, setRenderError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -38,10 +41,16 @@ export function MermaidPreview({ sessionId }: { sessionId: string }) {
       const payload = (await response.json()) as {
         svg: string | null;
         diagram: string | null;
+        title?: string | null;
+        focus?: string | null;
+        error?: string | null;
       };
 
       setSvg(payload.svg);
-      setDiagram(payload.diagram);
+      setDiagram(payload.diagram ?? null);
+      setTitle(payload.title ?? null);
+      setFocus(payload.focus ?? null);
+      setRenderError(payload.error ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error loading Mermaid render');
     } finally {
@@ -58,8 +67,8 @@ export function MermaidPreview({ sessionId }: { sessionId: string }) {
       <header style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
         <h2 style={{ fontSize: '1.5rem', margin: 0 }}>Mermaid Preview</h2>
         <p style={{ margin: 0, color: '#94a3b8' }}>
-          This lightweight preview reflects the latest Mermaid command issued during the session. Full
-          rendering will be implemented with a Mermaid runtime soon.
+          View the latest Mermaid diagram issued during this session. Refresh after the agent updates the
+          canvas to pull the newest render.
         </p>
       </header>
 
@@ -82,6 +91,7 @@ export function MermaidPreview({ sessionId }: { sessionId: string }) {
       </div>
 
       {error ? <p style={{ color: '#f97316' }}>{error}</p> : null}
+      {renderError ? <p style={{ color: '#f97316' }}>{renderError}</p> : null}
 
       {svg ? (
         <iframe
@@ -99,9 +109,16 @@ export function MermaidPreview({ sessionId }: { sessionId: string }) {
             color: '#94a3b8',
           }}
         >
-          {isLoading ? 'Loading latest Mermaid diagram…' : 'No Mermaid commands recorded yet.'}
+          {isLoading
+            ? 'Loading latest Mermaid diagram…'
+            : renderError
+              ? 'Unable to render the latest diagram.'
+              : 'No Mermaid commands recorded yet.'}
         </div>
       )}
+
+      {title ? <p style={{ margin: 0, color: '#e2e8f0' }}><strong>Title:</strong> {title}</p> : null}
+      {focus ? <p style={{ margin: 0, color: '#94a3b8' }}><strong>Focus:</strong> {focus}</p> : null}
 
       {diagram ? (
         <pre
