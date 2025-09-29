@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { readCanvasCommands, recordCanvasCommands, resetCanvasCommands } from '@/lib/canvas/server';
-import { applyExcalidrawOperations } from '@/lib/canvas/excalidrawState';
+import { applyExcalidrawOperations, getExcalidrawScene } from '@/lib/canvas/excalidrawState';
 import type {
   CanvasCommandBatch,
   ExcalidrawOperation,
@@ -49,6 +49,8 @@ export async function POST(request: Request) {
   recordCanvasCommands(payload);
 
   const warnings: string[] = [];
+
+  console.info('[canvas] Received command batch', JSON.stringify(payload, null, 2));
 
   const fallbackElements = (summary: string | undefined): ExcalidrawOperation[] => {
     const text = summary?.toLowerCase() ?? '';
@@ -137,6 +139,9 @@ export async function POST(request: Request) {
 
   payload.commands.forEach((command, index) => {
     if (command.type !== 'excalidraw.patch') {
+      if (command.type === 'mermaid.update') {
+        console.info('[canvas] Mermaid update payload', command.payload);
+      }
       return;
     }
 
@@ -148,6 +153,7 @@ export async function POST(request: Request) {
       const fallback = fallbackElements(summary);
       applyExcalidrawOperations(payload.sessionId, fallback);
       warnings.push(`Command ${index} missing operations; applied fallback ${fallback[0].elements[0].type}.`);
+      console.info('[canvas] Applied fallback operations', fallback);
       return;
     }
 
@@ -252,6 +258,7 @@ export async function POST(request: Request) {
           const interpreted = normalizeAdHocOperation(operation, index, opIndex);
           if (interpreted) {
             operations.push(interpreted);
+            console.info('[canvas] Normalized ad-hoc operation', interpreted);
           }
           break;
         }
@@ -260,10 +267,22 @@ export async function POST(request: Request) {
       }
     });
 
-    if (operations.length > 0) {
-      applyExcalidrawOperations(payload.sessionId, operations);
+    if (operations.length === 0) {
+      const summary = typeof (command.payload as Record<string, unknown>).summary === 'string'
+        ? (command.payload as Record<string, unknown>).summary
+        : undefined;
+      const fallback = fallbackElements(summary);
+      console.info('[canvas] No valid operations parsed; applying fallback', fallback);
+      applyExcalidrawOperations(payload.sessionId, fallback);
+      warnings.push(`Command ${index} had no valid operations; applied fallback ${fallback[0].elements[0].type}.`);
+      return;
     }
+
+    console.info('[canvas] Applying operations', operations);
+    applyExcalidrawOperations(payload.sessionId, operations);
   });
+
+  console.info('[canvas] Current scene', getExcalidrawScene(payload.sessionId));
 
   return NextResponse.json({
     sessionId: payload.sessionId,
