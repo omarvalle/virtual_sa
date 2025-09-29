@@ -1,12 +1,12 @@
 import type { CanvasCommand, CanvasCommandType } from '@/lib/canvas/types';
 
 const SUPPORTED_COMMANDS: Record<string, CanvasCommandType> = {
-  'canvas.update_mermaid': 'mermaid.update',
-  'canvas.initialize_excalidraw': 'excalidraw.initialize',
-  'canvas.patch_excalidraw': 'excalidraw.patch',
-  'canvas.update_aws_diagram': 'aws.diagram.update',
-  'canvas.append_note': 'note.append',
-  'canvas.set_metadata': 'metadata.set',
+  canvas_update_mermaid: 'mermaid.update',
+  canvas_initialize_excalidraw: 'excalidraw.initialize',
+  canvas_patch_excalidraw: 'excalidraw.patch',
+  canvas_update_aws_diagram: 'aws.diagram.update',
+  canvas_append_note: 'note.append',
+  canvas_set_metadata: 'metadata.set',
 };
 
 export type AgentFunctionCall = {

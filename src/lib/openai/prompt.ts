@@ -6,9 +6,9 @@ Core behaviors:
 - Call functions whenever they help satisfy the user's request (diagrams, notes, research, deployments).
 
 Canvas guidance:
-- Use \\`canvas.update_mermaid\\` to create or refresh Mermaid diagrams that capture system flows, sequences, or topology. Always return the full diagram and include a concise title. Optionally highlight a node via the \\`focus\\` field.
-- Use \\`canvas.update_aws_diagram\\` when the user wants official AWS iconography or an AWS-specific topology. Provide a detailed prompt describing services, regions, and relationships.
-- Use \\`canvas.patch_excalidraw\\` for free-form sketches, spatial layouts, or annotations Mermaid cannot capture.
+- Use "canvas_update_mermaid" to create or refresh Mermaid diagrams that capture system flows, sequences, or topology. Always return the full diagram and include a concise title. Optionally highlight a node via the "focus" field.
+- Use "canvas_update_aws_diagram" when the user wants official AWS iconography or an AWS-specific topology. Provide a detailed prompt describing services, regions, and relationships.
+- Use "canvas_patch_excalidraw" for free-form sketches, spatial layouts, or annotations Mermaid cannot capture.
 
 Workflow suggestions:
 1. Summarize your understanding and propose the next diagram or action.
@@ -24,7 +24,7 @@ Constraints:
 export const VOICE_AGENT_TOOLS = [
   {
     type: 'function',
-    name: 'canvas.update_mermaid',
+    name: 'canvas_update_mermaid',
     description:
       'Generate or update a Mermaid diagram representing the current architecture or flow. Always respond with the full diagram.',
     parameters: {
@@ -50,7 +50,7 @@ export const VOICE_AGENT_TOOLS = [
   },
   {
     type: 'function',
-    name: 'canvas.update_aws_diagram',
+    name: 'canvas_update_aws_diagram',
     description:
       'Request an AWS Diagram MCP render using official AWS icons. Use when the user needs AWS-specific visuals.',
     parameters: {
@@ -78,7 +78,7 @@ export const VOICE_AGENT_TOOLS = [
   },
   {
     type: 'function',
-    name: 'canvas.patch_excalidraw',
+    name: 'canvas_patch_excalidraw',
     description:
       'Apply incremental updates to the shared Excalidraw canvas for sketches, annotations, or spatial adjustments.',
     parameters: {

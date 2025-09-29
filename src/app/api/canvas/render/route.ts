@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { readCanvasCommands } from '@/lib/canvas/server';
 import type { CanvasCommand } from '@/lib/canvas/types';
-import { renderMermaidDiagram } from '@/lib/canvas/mermaidRenderer';
 
 function collectLatestMermaidCommand(commands: CanvasCommand[]): CanvasCommand | null {
   for (let i = commands.length - 1; i >= 0; i -= 1) {
@@ -39,25 +38,12 @@ export async function GET(request: Request) {
     });
   }
 
-  try {
-    const svg = await renderMermaidDiagram(diagram);
-    return NextResponse.json({
-      sessionId,
-      svg,
-      commandId: mermaidCommand.id,
-      diagram,
-      title,
-      focus,
-    });
-  } catch (error) {
-    return NextResponse.json({
-      sessionId,
-      svg: null,
-      commandId: mermaidCommand.id,
-      diagram,
-      title,
-      focus,
-      error: error instanceof Error ? error.message : 'Failed to render Mermaid diagram.',
-    });
-  }
+  return NextResponse.json({
+    sessionId,
+    svg: null,
+    commandId: mermaidCommand.id,
+    diagram,
+    title,
+    focus,
+  });
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import type { CSSProperties } from 'react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 const wrapperStyle: CSSProperties = {
   background: '#0f172a',
@@ -20,13 +20,14 @@ const iframeStyle: CSSProperties = {
 };
 
 export function MermaidPreview({ sessionId }: { sessionId: string }) {
-  const [svg, setSvg] = useState<string | null>(null);
   const [diagram, setDiagram] = useState<string | null>(null);
   const [title, setTitle] = useState<string | null>(null);
   const [focus, setFocus] = useState<string | null>(null);
   const [renderError, setRenderError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isRendering, setIsRendering] = useState(false);
+  const svgContainerRef = useRef<HTMLDivElement | null>(null);
 
   const loadPreview = useCallback(async () => {
     setIsLoading(true);
@@ -46,7 +47,6 @@ export function MermaidPreview({ sessionId }: { sessionId: string }) {
         error?: string | null;
       };
 
-      setSvg(payload.svg);
       setDiagram(payload.diagram ?? null);
       setTitle(payload.title ?? null);
       setFocus(payload.focus ?? null);
@@ -61,6 +61,55 @@ export function MermaidPreview({ sessionId }: { sessionId: string }) {
   useEffect(() => {
     void loadPreview();
   }, [loadPreview]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function renderMermaid() {
+      if (!diagram) {
+        if (svgContainerRef.current) {
+          svgContainerRef.current.innerHTML = '';
+        }
+        setRenderError(null);
+        return;
+      }
+
+      setIsRendering(true);
+      setRenderError(null);
+
+      try {
+        const mermaidModule = await import('mermaid');
+        const mermaidInstance = mermaidModule.default;
+        mermaidInstance.initialize({ startOnLoad: false, theme: 'dark', securityLevel: 'loose', logLevel: 'error' });
+        const renderId = `mermaid-preview-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const { svg } = await mermaidInstance.render(renderId, diagram);
+
+        if (!cancelled && svgContainerRef.current) {
+          svgContainerRef.current.innerHTML = svg;
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setRenderError(err instanceof Error ? err.message : 'Unable to render Mermaid diagram');
+          if (svgContainerRef.current) {
+            svgContainerRef.current.innerHTML = '';
+          }
+        }
+      } finally {
+        if (!cancelled) {
+          setIsRendering(false);
+        }
+      }
+    }
+
+    void renderMermaid();
+
+    return () => {
+      cancelled = true;
+      if (svgContainerRef.current) {
+        svgContainerRef.current.innerHTML = '';
+      }
+    };
+  }, [diagram]);
 
   return (
     <article style={wrapperStyle}>
@@ -93,12 +142,26 @@ export function MermaidPreview({ sessionId }: { sessionId: string }) {
       {error ? <p style={{ color: '#f97316' }}>{error}</p> : null}
       {renderError ? <p style={{ color: '#f97316' }}>{renderError}</p> : null}
 
-      {svg ? (
-        <iframe
-          style={iframeStyle}
-          srcDoc={`<!DOCTYPE html><html><body style="margin:0;background:#020617;color:#e2e8f0;">${svg}</body></html>`}
-          title="Mermaid preview"
-        />
+      {diagram ? (
+        <div
+          style={{
+            ...iframeStyle,
+            overflow: 'hidden',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '0.5rem',
+          }}
+        >
+          <div
+            ref={svgContainerRef}
+            style={{ width: '100%', height: '100%', overflow: 'auto' }}
+            aria-label="Mermaid diagram"
+          />
+          {isRendering ? (
+            <span style={{ position: 'absolute', color: '#94a3b8' }}>Rendering…</span>
+          ) : null}
+        </div>
       ) : (
         <div
           style={{

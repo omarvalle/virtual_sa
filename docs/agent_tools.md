@@ -4,7 +4,7 @@ These tool definitions will guide the voice agent when interacting with the canv
 
 ## 1. Mermaid Diagram Tool
 
-- **Function name:** `canvas.update_mermaid`
+- **Function name:** `canvas_update_mermaid`
 - **Description:**
   > Generate or update a Mermaid diagram for the active architecture scenario. Use when the user requests high-level flows, service interactions, or deployment steps that are not AWS icon-specific. Always return the entire diagram, not a diff.
 - **Parameters (JSON Schema):**
@@ -37,7 +37,7 @@ These tool definitions will guide the voice agent when interacting with the canv
 
 ## 2. Excalidraw Canvas Tool
 
-- **Function name:** `canvas.patch_excalidraw`
+- **Function name:** `canvas_patch_excalidraw`
 - **Description:**
   > Apply incremental updates to the shared Excalidraw canvas. Use for free-form sketches, annotations, or when the user wants to move existing elements.
 - **Parameters:**
@@ -67,7 +67,7 @@ These tool definitions will guide the voice agent when interacting with the canv
 
 ## 3. AWS Diagram Tool (MCP-backed)
 
-- **Function name:** `canvas.update_aws_diagram`
+- **Function name:** `canvas_update_aws_diagram`
 - **Description:**
   > Request AWS Diagram MCP to render an AWS-specific architecture view. Use when the user wants official AWS icons or is focused on service-specific topology.
 - **Parameters:**
