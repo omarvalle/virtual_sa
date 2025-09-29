@@ -76,6 +76,65 @@ export async function POST(request: Request) {
     ];
   };
 
+  const normalizeAdHocOperation = (
+    operation: Record<string, unknown>,
+    commandIndex: number,
+    opIndex: number,
+  ): ExcalidrawOperation | null => {
+    const opType = typeof operation.type === 'string' ? operation.type.toLowerCase() : '';
+    const shape = typeof operation.shape === 'string' ? operation.shape.toLowerCase() : '';
+
+    if (opType === 'draw') {
+      const elementType: ExcalidrawElementPayload['type'] = shape.includes('circle') || shape.includes('ellipse')
+        ? 'ellipse'
+        : shape.includes('diamond')
+          ? 'diamond'
+          : shape.includes('arrow')
+            ? 'arrow'
+            : shape.includes('text')
+              ? 'text'
+              : 'rectangle';
+
+      const x = Number(operation.x ?? 200);
+      const y = Number(operation.y ?? 140);
+      const width = Number(operation.width ?? (elementType === 'arrow' ? 160 : 120));
+      const height = Number(operation.height ?? (elementType === 'arrow' ? 40 : 120));
+
+      if (Number.isNaN(x) || Number.isNaN(y)) {
+        warnings.push(`Command ${commandIndex} operation ${opIndex} ignored: missing numeric coordinates.`);
+        return null;
+      }
+
+      const element: ExcalidrawElementPayload = {
+        type: elementType,
+        x,
+        y,
+        width: Number.isNaN(width) ? undefined : width,
+        height: Number.isNaN(height) ? undefined : height,
+        strokeColor:
+          typeof operation.strokeColor === 'string'
+            ? operation.strokeColor
+            : typeof operation.color === 'string'
+              ? operation.color
+              : '#22d3ee',
+        backgroundColor:
+          typeof operation.fillColor === 'string'
+            ? operation.fillColor
+            : elementType === 'arrow'
+              ? undefined
+              : 'rgba(34, 211, 238, 0.2)',
+        text: typeof operation.text === 'string' ? operation.text : undefined,
+      };
+
+      return {
+        kind: 'add_elements',
+        elements: [element],
+      };
+    }
+
+    return null;
+  };
+
   payload.commands.forEach((command, index) => {
     if (command.type !== 'excalidraw.patch') {
       return;
@@ -189,6 +248,13 @@ export async function POST(request: Request) {
         case 'clear_scene':
           operations.push({ kind: 'clear_scene' });
           break;
+        case undefined: {
+          const interpreted = normalizeAdHocOperation(operation, index, opIndex);
+          if (interpreted) {
+            operations.push(interpreted);
+          }
+          break;
+        }
         default:
           warnings.push(`Command ${index} operation ${opIndex} has unsupported kind '${String(kind)}'.`);
       }

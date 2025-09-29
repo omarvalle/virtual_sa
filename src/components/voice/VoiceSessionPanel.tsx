@@ -129,13 +129,23 @@ export function VoiceSessionPanel() {
         },
         onFunctionCall: async (command) => {
           try {
-            await postCanvasCommands({ sessionId: SESSION_ID, commands: [command] });
+            const result = await postCanvasCommands({ sessionId: SESSION_ID, commands: [command] });
             appendEvent({
               id: command.id,
               type: 'canvas.command',
               label: JSON.stringify(command, null, 2),
               timestamp: Date.now(),
             });
+            if (result.warnings && result.warnings.length > 0) {
+              result.warnings.forEach((warning) => {
+                appendEvent({
+                  id: `evt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+                  type: 'canvas.warning',
+                  label: warning,
+                  timestamp: Date.now(),
+                });
+              });
+            }
           } catch (error) {
             appendEvent({
               id: `evt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
