@@ -1,6 +1,11 @@
 import type { CanvasCommand, CanvasCommandBatch } from '@/lib/canvas/types';
 
-export async function postCanvasCommands(batch: CanvasCommandBatch): Promise<{ accepted: number }> {
+export type PostCanvasResponse = {
+  accepted: number;
+  warnings?: string[];
+};
+
+export async function postCanvasCommands(batch: CanvasCommandBatch): Promise<PostCanvasResponse> {
   const response = await fetch('/api/canvas/events', {
     method: 'POST',
     headers: {
@@ -14,7 +19,7 @@ export async function postCanvasCommands(batch: CanvasCommandBatch): Promise<{ a
     throw new Error(body?.message ?? 'Failed to send canvas commands.');
   }
 
-  return (await response.json()) as { accepted: number };
+  return (await response.json()) as PostCanvasResponse;
 }
 
 export async function fetchCanvasCommands(sessionId: string): Promise<CanvasCommand[]> {

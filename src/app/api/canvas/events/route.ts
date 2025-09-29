@@ -48,7 +48,33 @@ export async function POST(request: Request) {
 
   recordCanvasCommands(payload);
 
-  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  const fallbackElements = (summary: string | undefined): ExcalidrawOperation[] => {
+    const text = summary?.toLowerCase() ?? '';
+    const isCircle = text.includes('circle');
+    const isEllipse = text.includes('oval');
+    const isDiamond = text.includes('diamond');
+    const isArrow = text.includes('arrow');
+    const type: ExcalidrawElementPayload['type'] = isCircle || isEllipse ? 'ellipse' : isDiamond ? 'diamond' : isArrow ? 'arrow' : 'rectangle';
+    return [
+      {
+        kind: 'add_elements',
+        elements: [
+          {
+            type,
+            x: 200,
+            y: 140,
+            width: type === 'arrow' ? 160 : 120,
+            height: type === 'arrow' ? 40 : 120,
+            text: type === 'text' ? 'Note' : undefined,
+            strokeColor: '#22d3ee',
+            backgroundColor: type === 'arrow' ? undefined : 'rgba(34, 211, 238, 0.2)',
+          },
+        ],
+      },
+    ];
+  };
 
   payload.commands.forEach((command, index) => {
     if (command.type !== 'excalidraw.patch') {
@@ -56,8 +82,13 @@ export async function POST(request: Request) {
     }
 
     const operationsValue = (command.payload as { operations?: unknown }).operations;
-    if (!Array.isArray(operationsValue)) {
-      errors.push(`Command ${index} missing 'operations' array for excalidraw.patch.`);
+    if (!Array.isArray(operationsValue) || operationsValue.length === 0) {
+      const summary = typeof (command.payload as Record<string, unknown>).summary === 'string'
+        ? (command.payload as Record<string, unknown>).summary
+        : undefined;
+      const fallback = fallbackElements(summary);
+      applyExcalidrawOperations(payload.sessionId, fallback);
+      warnings.push(`Command ${index} missing operations; applied fallback ${fallback[0].elements[0].type}.`);
       return;
     }
 
@@ -65,7 +96,7 @@ export async function POST(request: Request) {
 
     operationsValue.forEach((operationRaw, opIndex) => {
       if (!operationRaw || typeof operationRaw !== 'object') {
-        errors.push(`Command ${index} operation ${opIndex} is not an object.`);
+        warnings.push(`Command ${index} operation ${opIndex} ignored (not an object).`);
         return;
       }
 
@@ -76,19 +107,19 @@ export async function POST(request: Request) {
         case 'add_elements': {
           const elements = operation.elements;
           if (!Array.isArray(elements) || elements.length === 0) {
-            errors.push(`Command ${index} operation ${opIndex} requires non-empty elements array.`);
+            warnings.push(`Command ${index} operation ${opIndex} requires non-empty elements array.`);
             return;
           }
           const sanitizedElements: ExcalidrawElementPayload[] = [];
           elements.forEach((elementRaw, elementIndex) => {
             if (!elementRaw || typeof elementRaw !== 'object') {
-              errors.push(`Command ${index} operation ${opIndex} element ${elementIndex} must be an object.`);
+              warnings.push(`Command ${index} operation ${opIndex} element ${elementIndex} ignored (not an object).`);
               return;
             }
             const element = elementRaw as Record<string, unknown>;
             const type = element.type;
             if (type !== 'rectangle' && type !== 'ellipse' && type !== 'diamond' && type !== 'arrow' && type !== 'text') {
-              errors.push(
+              warnings.push(
                 `Command ${index} operation ${opIndex} element ${elementIndex} has unsupported type '${String(type)}'.`,
               );
               return;
@@ -96,7 +127,7 @@ export async function POST(request: Request) {
             const x = Number(element.x);
             const y = Number(element.y);
             if (Number.isNaN(x) || Number.isNaN(y)) {
-              errors.push(
+              warnings.push(
                 `Command ${index} operation ${opIndex} element ${elementIndex} requires numeric x and y coordinates.`,
               );
               return;
@@ -136,7 +167,7 @@ export async function POST(request: Request) {
           const id = operation.id;
           const props = operation.props;
           if (typeof id !== 'string' || !props || typeof props !== 'object') {
-            errors.push(`Command ${index} operation ${opIndex} requires string id and object props.`);
+            warnings.push(`Command ${index} operation ${opIndex} requires string id and object props.`);
             return;
           }
           operations.push({
@@ -149,7 +180,7 @@ export async function POST(request: Request) {
         case 'remove_element': {
           const id = operation.id;
           if (typeof id !== 'string') {
-            errors.push(`Command ${index} operation ${opIndex} requires string id.`);
+            warnings.push(`Command ${index} operation ${opIndex} requires string id.`);
             return;
           }
           operations.push({ kind: 'remove_element', id });
@@ -159,7 +190,7 @@ export async function POST(request: Request) {
           operations.push({ kind: 'clear_scene' });
           break;
         default:
-          errors.push(`Command ${index} operation ${opIndex} has unsupported kind '${String(kind)}'.`);
+          warnings.push(`Command ${index} operation ${opIndex} has unsupported kind '${String(kind)}'.`);
       }
     });
 
@@ -168,18 +199,9 @@ export async function POST(request: Request) {
     }
   });
 
-  if (errors.length > 0) {
-    return NextResponse.json(
-      {
-        message: 'One or more excalidraw.patch operations were invalid.',
-        errors,
-      },
-      { status: 400 },
-    );
-  }
-
   return NextResponse.json({
     sessionId: payload.sessionId,
     accepted: payload.commands.length,
+    warnings,
   });
 }
