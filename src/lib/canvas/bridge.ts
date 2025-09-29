@@ -23,11 +23,34 @@ export function translateFunctionCall(
     return null;
   }
 
+  let payload: Record<string, unknown> = call.arguments ?? {};
+
+  if (type === 'excalidraw.patch') {
+    if (Array.isArray(call.arguments)) {
+      payload = { operations: call.arguments };
+    } else if (
+      call.arguments &&
+      typeof call.arguments === 'object' &&
+      !Array.isArray(call.arguments) &&
+      !('operations' in call.arguments)
+    ) {
+      const potentialOps = (call.arguments as Record<string, unknown>).operations;
+      if (Array.isArray(potentialOps)) {
+        payload = call.arguments as Record<string, unknown>;
+      } else {
+        payload = {
+          ...(call.arguments as Record<string, unknown>),
+          operations: [],
+        };
+      }
+    }
+  }
+
   return {
     id: `cmd_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     sessionId,
     type,
-    payload: call.arguments ?? {},
+    payload,
     issuedAt: Date.now(),
     issuedBy: 'agent',
   };
