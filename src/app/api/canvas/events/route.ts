@@ -86,6 +86,49 @@ export async function POST(request: Request) {
     const opType = typeof operation.type === 'string' ? operation.type.toLowerCase() : '';
     const shape = typeof operation.shape === 'string' ? operation.shape.toLowerCase() : '';
 
+    const inferElement = (info: Record<string, unknown>): ExcalidrawElementPayload => {
+      const rawType = typeof info.type === 'string' ? info.type.toLowerCase() : '';
+      const elementType: ExcalidrawElementPayload['type'] = rawType === 'ellipse' || rawType === 'circle'
+        ? 'ellipse'
+        : rawType === 'diamond'
+          ? 'diamond'
+          : rawType === 'arrow'
+            ? 'arrow'
+            : rawType === 'text'
+              ? 'text'
+              : 'rectangle';
+
+      const x = Number(info.x ?? 200);
+      const y = Number(info.y ?? 140);
+      const width = Number(info.width ?? (elementType === 'arrow' ? 160 : 120));
+      const height = Number(info.height ?? (elementType === 'arrow' ? 40 : 120));
+
+      if (Number.isNaN(x) || Number.isNaN(y)) {
+        warnings.push(`Command ${commandIndex} operation ${opIndex} ignored: missing numeric coordinates.`);
+      }
+
+      return {
+        type: elementType,
+        x: Number.isNaN(x) ? 200 : x,
+        y: Number.isNaN(y) ? 140 : y,
+        width: Number.isNaN(width) ? undefined : width,
+        height: Number.isNaN(height) ? undefined : height,
+        strokeColor:
+          typeof info.strokeColor === 'string'
+            ? (info.strokeColor as string)
+            : typeof info.color === 'string'
+              ? (info.color as string)
+              : '#22d3ee',
+        backgroundColor:
+          typeof info.fillColor === 'string'
+            ? (info.fillColor as string)
+            : elementType === 'arrow'
+              ? undefined
+              : 'rgba(34, 211, 238, 0.2)',
+        text: typeof info.text === 'string' ? info.text : undefined,
+      };
+    };
+
     if (opType === 'draw') {
       const elementType: ExcalidrawElementPayload['type'] = shape.includes('circle') || shape.includes('ellipse')
         ? 'ellipse'
@@ -128,6 +171,14 @@ export async function POST(request: Request) {
         text: typeof operation.text === 'string' ? operation.text : undefined,
       };
 
+      return {
+        kind: 'add_elements',
+        elements: [element],
+      };
+    }
+
+    if (opType === 'add' && operation.item && typeof operation.item === 'object') {
+      const element = inferElement(operation.item as Record<string, unknown>);
       return {
         kind: 'add_elements',
         elements: [element],
