@@ -49,7 +49,65 @@ These tool definitions will guide the voice agent when interacting with the canv
         "type": "array",
         "description": "Series of operations matching Excalidraw's scene update format",
         "items": {
-          "type": "object"
+          "type": "object",
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "const": "add_elements"
+                },
+                "elements": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "enum": ["rectangle", "ellipse", "diamond", "arrow", "text"]
+                      },
+                      "x": { "type": "number" },
+                      "y": { "type": "number" },
+                      "width": { "type": "number" },
+                      "height": { "type": "number" },
+                      "text": { "type": "string" }
+                    },
+                    "required": ["type", "x", "y"],
+                    "additionalProperties": true
+                  },
+                  "minItems": 1
+                }
+              },
+              "required": ["kind", "elements"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": { "const": "update_element" },
+                "id": { "type": "string" },
+                "props": { "type": "object" }
+              },
+              "required": ["kind", "id", "props"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": { "const": "remove_element" },
+                "id": { "type": "string" }
+              },
+              "required": ["kind", "id"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": { "const": "clear_scene" }
+              },
+              "required": ["kind"],
+              "additionalProperties": false
+            }
+          ]
         },
         "minItems": 1
       },

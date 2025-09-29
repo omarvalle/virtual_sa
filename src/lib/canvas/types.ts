@@ -19,3 +19,38 @@ export type CanvasCommandBatch = {
   sessionId: string;
   commands: CanvasCommand[];
 };
+
+export type ExcalidrawElementPayload = {
+  id?: string;
+  type: 'rectangle' | 'ellipse' | 'diamond' | 'arrow' | 'text';
+  x: number;
+  y: number;
+  width?: number;
+  height?: number;
+  text?: string;
+  rotation?: number;
+  strokeColor?: string;
+  backgroundColor?: string;
+  strokeWidth?: number;
+  roughness?: number;
+  roundness?: number;
+  arrowhead?: 'arrow' | 'bar' | 'circle' | null;
+};
+
+export type ExcalidrawOperation =
+  | {
+      kind: 'add_elements';
+      elements: ExcalidrawElementPayload[];
+    }
+  | {
+      kind: 'update_element';
+      id: string;
+      props: Partial<ExcalidrawElementPayload>;
+    }
+  | {
+      kind: 'remove_element';
+      id: string;
+    }
+  | {
+      kind: 'clear_scene';
+    };

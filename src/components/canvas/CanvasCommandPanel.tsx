@@ -29,7 +29,7 @@ const badgeStyle: CSSProperties = {
 
 const sessionId = 'primary-session';
 
-function buildSampleCommand(): CanvasCommand {
+function buildSampleMermaidCommand(): CanvasCommand {
   return {
     id: `cmd_${Date.now()}`,
     sessionId,
@@ -37,6 +37,35 @@ function buildSampleCommand(): CanvasCommand {
     payload: {
       diagram: 'graph TD\n  Voice --> Canvas\n  Canvas --> Deployment',
       focus: 'Voice',
+    },
+    issuedAt: Date.now(),
+    issuedBy: 'system',
+  };
+}
+
+function buildSampleSquareCommand(): CanvasCommand {
+  return {
+    id: `cmd_${Date.now()}_sq`,
+    sessionId,
+    type: 'excalidraw.patch',
+    payload: {
+      summary: 'Adding a blue square to the canvas.',
+      operations: [
+        {
+          kind: 'add_elements',
+          elements: [
+            {
+              type: 'rectangle',
+              x: 100,
+              y: 120,
+              width: 120,
+              height: 120,
+              strokeColor: '#38bdf8',
+              backgroundColor: 'rgba(56, 189, 248, 0.2)',
+            },
+          ],
+        },
+      ],
     },
     issuedAt: Date.now(),
     issuedBy: 'system',
@@ -61,11 +90,25 @@ export function CanvasCommandPanel() {
     }
   }, []);
 
-  const sendSample = useCallback(async () => {
+  const sendSampleMermaid = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const command = buildSampleCommand();
+      const command = buildSampleMermaidCommand();
+      await postCanvasCommands({ sessionId, commands: [command] });
+      setCommands((prev) => [...prev, command]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to send command.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  const sendSampleSquare = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const command = buildSampleSquareCommand();
       await postCanvasCommands({ sessionId, commands: [command] });
       setCommands((prev) => [...prev, command]);
     } catch (err) {
@@ -107,7 +150,7 @@ export function CanvasCommandPanel() {
       <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
         <button
           type="button"
-          onClick={sendSample}
+          onClick={sendSampleMermaid}
           style={{
             padding: '0.6rem 1.25rem',
             borderRadius: '0.75rem',
@@ -120,6 +163,23 @@ export function CanvasCommandPanel() {
           disabled={isLoading}
         >
           Send Sample Diagram Command
+        </button>
+
+        <button
+          type="button"
+          onClick={sendSampleSquare}
+          style={{
+            padding: '0.6rem 1.25rem',
+            borderRadius: '0.75rem',
+            border: 'none',
+            background: '#f97316',
+            color: '#0f172a',
+            fontWeight: 600,
+            cursor: isLoading ? 'progress' : 'pointer',
+          }}
+          disabled={isLoading}
+        >
+          Send Sample Square Command
         </button>
 
         <button

@@ -8,7 +8,7 @@ Core behaviors:
 Canvas guidance:
 - Use "canvas_update_mermaid" to create or refresh Mermaid diagrams that capture system flows, sequences, or topology. Always return the full diagram and include a concise title. Optionally highlight a node via the "focus" field.
 - Use "canvas_update_aws_diagram" when the user wants official AWS iconography or an AWS-specific topology. Provide a detailed prompt describing services, regions, and relationships.
-- Use "canvas_patch_excalidraw" for free-form sketches, spatial layouts, or annotations Mermaid cannot capture.
+- Use "canvas_patch_excalidraw" for free-form sketches, spatial layouts, or annotations. Every call MUST include an `operations` array describing the shapes to add, update, remove, or a `clear_scene` instruction. Provide coordinates (x/y), dimensions, and colors so the canvas can render visually.
 
 Workflow suggestions:
 1. Summarize your understanding and propose the next diagram or action.
@@ -86,10 +86,69 @@ export const VOICE_AGENT_TOOLS = [
       properties: {
         operations: {
           type: 'array',
-          description: 'List of operations conforming to Excalidraw\'s scene update schema.',
+          description:
+            'List of drawing operations. Each entry must be add_elements, update_element, remove_element, or clear_scene.',
           minItems: 1,
           items: {
             type: 'object',
+            oneOf: [
+              {
+                type: 'object',
+                properties: {
+                  kind: { const: 'add_elements' },
+                  elements: {
+                    type: 'array',
+                    minItems: 1,
+                    items: {
+                      type: 'object',
+                      properties: {
+                        type: {
+                          enum: ['rectangle', 'ellipse', 'diamond', 'arrow', 'text'],
+                        },
+                        x: { type: 'number' },
+                        y: { type: 'number' },
+                        width: { type: 'number' },
+                        height: { type: 'number' },
+                        text: { type: 'string' },
+                        strokeColor: { type: 'string' },
+                        backgroundColor: { type: 'string' },
+                      },
+                      required: ['type', 'x', 'y'],
+                      additionalProperties: true,
+                    },
+                  },
+                },
+                required: ['kind', 'elements'],
+                additionalProperties: false,
+              },
+              {
+                type: 'object',
+                properties: {
+                  kind: { const: 'update_element' },
+                  id: { type: 'string' },
+                  props: { type: 'object' },
+                },
+                required: ['kind', 'id', 'props'],
+                additionalProperties: false,
+              },
+              {
+                type: 'object',
+                properties: {
+                  kind: { const: 'remove_element' },
+                  id: { type: 'string' },
+                },
+                required: ['kind', 'id'],
+                additionalProperties: false,
+              },
+              {
+                type: 'object',
+                properties: {
+                  kind: { const: 'clear_scene' },
+                },
+                required: ['kind'],
+                additionalProperties: false,
+              },
+            ],
           },
         },
         summary: {
