@@ -5,7 +5,7 @@ export type CanvasShape = ExcalidrawElementPayload & {
   width: number;
   height: number;
   strokeColor: string;
-  backgroundColor: string;
+  backgroundColor?: string;
   strokeWidth: number;
   rotation: number;
   isDeleted?: boolean;
