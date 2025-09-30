@@ -129,6 +129,8 @@ export async function POST(request: Request) {
       };
     };
 
+    const addElementTypes = ['rectangle', 'ellipse', 'circle', 'diamond', 'arrow', 'text'];
+
     if (opType === 'draw') {
       const elementType: ExcalidrawElementPayload['type'] = shape.includes('circle') || shape.includes('ellipse')
         ? 'ellipse'
@@ -179,6 +181,14 @@ export async function POST(request: Request) {
 
     if (opType === 'add' && operation.item && typeof operation.item === 'object') {
       const element = inferElement(operation.item as Record<string, unknown>);
+      return {
+        kind: 'add_elements',
+        elements: [element],
+      };
+    }
+
+    if (addElementTypes.includes(opType)) {
+      const element = inferElement(operation);
       return {
         kind: 'add_elements',
         elements: [element],
