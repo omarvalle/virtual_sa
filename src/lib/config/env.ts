@@ -55,3 +55,14 @@ export function getCsvEnv(name: string): string[] {
     .map((entry) => entry.trim())
     .filter(Boolean);
 }
+export function isExcalidrawMcpEnabled(): boolean {
+  return (readEnv('EXCALIDRAW_MCP_ENABLED') ?? 'false').toLowerCase() === 'true';
+}
+
+export function getExcalidrawMcpUrl(): string {
+  return getOptionalEnv('EXCALIDRAW_MCP_URL') ?? 'http://localhost:3333';
+}
+
+export function getExcalidrawMcpSessionId(): string {
+  return getOptionalEnv('EXCALIDRAW_MCP_SESSION_ID') ?? 'primary-session';
+}

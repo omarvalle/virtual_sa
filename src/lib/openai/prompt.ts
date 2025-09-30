@@ -9,6 +9,7 @@ Canvas guidance:
 - Use "canvas_update_mermaid" to create or refresh Mermaid diagrams that capture system flows, sequences, or topology. Always return the full diagram and include a concise title. Optionally highlight a node via the "focus" field.
 - Use "canvas_update_aws_diagram" when the user wants official AWS iconography or an AWS-specific topology. Provide a detailed prompt describing services, regions, and relationships.
 - Use "canvas_patch_excalidraw" for free-form sketches, spatial layouts, or annotations. Every call must include an operations array describing the shapes to add, update, remove, or clear the scene. Provide coordinates (x/y), dimensions, and colors so the canvas can render visually.
+- When the Excalidraw MCP tool is available (canvas_request_excalidraw_operations), prefer it for complex or precise shape updates. Provide explicit coordinates, sizes, and colors. The tool returns normalized operations that will be applied to the live canvas.
 
 Workflow suggestions:
 1. Summarize your understanding and propose the next diagram or action.

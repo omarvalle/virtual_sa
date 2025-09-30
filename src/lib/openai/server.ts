@@ -1,4 +1,5 @@
-import { getEnv, getOptionalEnv } from '@/lib/config/env';
+import { getEnv, getOptionalEnv, isExcalidrawMcpEnabled } from '@/lib/config/env';
+import { getVoiceAgentTools } from '@/lib/openai/tools';
 import { VOICE_AGENT_INSTRUCTIONS, VOICE_AGENT_TOOLS } from '@/lib/openai/prompt';
 
 type RealtimeToolDefinition = {
@@ -53,7 +54,10 @@ export async function createOpenAIRealtimeSession(): Promise<{
       Authorization: `Bearer ${apiKey}`,
       'OpenAI-Beta': 'realtime=v1',
     },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({
+      ...payload,
+      tools: getVoiceAgentTools({ includeExcalidrawMcp: isExcalidrawMcpEnabled() }),
+    }),
   });
 
   if (!response.ok) {
