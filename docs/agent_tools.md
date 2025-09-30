@@ -171,3 +171,29 @@ Each time you call a tool, summarize the change verbally for the user.
 ```
 
 We'll embed this schema in our server configuration and later in AgentCore's Gateway registration.
+- **Function name:** `canvas_request_excalidraw_operations`
+- **Description:**
+  > Forward complex Excalidraw requests to the dedicated MCP server. Use when you need precise element placement, updates, or batch operations. The tool returns normalized data which the application converts into canvas updates.
+- **Parameters:**
+  ```json
+  {
+    "type": "object",
+    "properties": {
+      "operation": {
+        "type": "string",
+        "enum": ["create_elements", "update_element", "delete_element", "clear_scene"],
+        "description": "MCP operation to invoke"
+      },
+      "payload": {
+        "type": "object",
+        "description": "Operation-specific payload forwarded to the MCP server"
+      }
+    },
+    "required": ["operation"],
+    "additionalProperties": false
+  }
+  ```
+- **Usage tips:**
+  - Always include coordinates, dimensions, and colors when creating elements.
+  - Ensure `payload.id` is provided for update or delete operations.
+  - Prefer this tool over `canvas_patch_excalidraw` when precise control is required and the MCP server is available.

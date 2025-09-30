@@ -33,6 +33,7 @@ Copy `.env.example` to `.env.local` and set:
 ```
 EXCALIDRAW_MCP_ENABLED=true
 EXCALIDRAW_MCP_SESSION_ID=primary-session
+EXCALIDRAW_MCP_URL=http://localhost:3333
 ```
 No restart is needed for the API routes, but do restart `npm run dev` so the prompt/tool updates load.
 

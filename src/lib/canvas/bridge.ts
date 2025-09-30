@@ -4,6 +4,7 @@ const SUPPORTED_COMMANDS: Record<string, CanvasCommandType> = {
   canvas_update_mermaid: 'mermaid.update',
   canvas_initialize_excalidraw: 'excalidraw.initialize',
   canvas_patch_excalidraw: 'excalidraw.patch',
+  canvas_request_excalidraw_operations: 'excalidraw.sync',
   canvas_update_aws_diagram: 'aws.diagram.update',
   canvas_append_note: 'note.append',
   canvas_set_metadata: 'metadata.set',
@@ -21,6 +22,14 @@ export function translateFunctionCall(
   const type = SUPPORTED_COMMANDS[call.name];
   if (!type) {
     return null;
+  } else if (type === 'excalidraw.sync') {
+    if (Array.isArray(call.arguments)) {
+      payload = { operations: call.arguments };
+    } else if (!call.arguments || typeof call.arguments !== 'object') {
+      payload = {};
+    } else {
+      payload = call.arguments;
+    }
   }
 
   let payload: Record<string, unknown> = call.arguments ?? {};

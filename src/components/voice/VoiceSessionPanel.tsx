@@ -129,6 +129,32 @@ export function VoiceSessionPanel() {
         },
         onFunctionCall: async (command) => {
           try {
+            if (command.type === 'excalidraw.sync') {
+              const response = await fetch('/api/canvas/mcp', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(command.payload ?? {}),
+              });
+
+              if (!response.ok) {
+                const body = await response.json().catch(() => ({}));
+                throw new Error(body?.message ?? 'MCP request failed.');
+              }
+
+              const body = (await response.json()) as { success: boolean; result?: unknown };
+
+              appendEvent({
+                id: command.id,
+                type: 'canvas.mcp',
+                label: JSON.stringify(body?.result ?? {}, null, 2),
+                timestamp: Date.now(),
+              });
+
+              return;
+            }
+
             const result = await postCanvasCommands({ sessionId: SESSION_ID, commands: [command] });
             appendEvent({
               id: command.id,
