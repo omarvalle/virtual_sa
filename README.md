@@ -22,6 +22,8 @@ Voice-first web application that blends OpenAI's realtime agents with AWS Bedroc
    - `OPENAI_API_KEY` with a key that has realtime access.
    - `OPENAI_REALTIME_MODEL` and optional `OPENAI_REALTIME_VOICE` for preferred persona.
    - `VOICE_TOKEN_ALLOWED_ORIGINS` set to the web origins permitted to request realtime sessions (comma separated).
+   - Set `AWS_KNOWLEDGE_MCP_ENABLED=true` to allow the agent to call the hosted AWS Knowledge MCP server. Override `AWS_KNOWLEDGE_MCP_URL` if you proxy the service.
+   - Provide `TAVILY_API_KEY` (and optionally `TAVILY_MCP_LINK`) to enable live web search via Tavily. The link is optional; if omitted we fall back to `https://mcp.tavily.com/mcp/?tavilyApiKey=<key>`.
    - AWS, GitHub, and Claude settings when those integrations come online.
 4. **Run the development server**:
    ```bash
@@ -51,4 +53,4 @@ Use an `amazonlinux:2023` image with:
 
 ## Status
 
-Voice conversations stream transcripts in real time, the agent prompt is primed to call canvas tools, and Mermaid commands render to SVG previews. Next milestones include wiring AWS Diagram MCP output, Excalidraw scene management, and Claude-driven deployments.
+Voice conversations stream transcripts in real time, the agent prompt is primed to call canvas tools, and Mermaid commands render to SVG previews. Hosted MCP integrations now cover AWS Knowledge (official documentation) and Tavily (live web search/extraction). Next milestones include wiring AWS Diagram MCP output, Excalidraw scene management, and Claude-driven deployments.

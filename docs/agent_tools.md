@@ -197,3 +197,181 @@ We'll embed this schema in our server configuration and later in AgentCore's Gat
   - Always include coordinates, dimensions, and colors when creating elements.
   - Ensure `payload.id` is provided for update or delete operations.
   - Prefer this tool over `canvas_patch_excalidraw` when precise control is required and the MCP server is available.
+
+## 4. AWS Knowledge Tools (MCP-backed)
+
+These definitions are exposed when the hosted AWS Knowledge MCP server is enabled. They allow the agent to retrieve authoritative AWS documentation during the conversation.
+
+- **Function name:** `aws_knowledge_search`
+  - **Description:** Search AWS documentation, blogs, and guidance for resources related to the user’s query.
+  - **Parameters:**
+    ```json
+    {
+      "type": "object",
+      "properties": {
+        "search_phrase": {
+          "type": "string",
+          "description": "Search phrase to submit to the AWS documentation index"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "description": "Optional cap on returned results"
+        }
+      },
+      "required": ["search_phrase"],
+      "additionalProperties": false
+    }
+    ```
+
+- **Function name:** `aws_knowledge_read`
+  - **Description:** Fetch and convert a specific AWS documentation page into markdown so the agent can pull verbatim guidance.
+  - **Parameters:**
+    ```json
+    {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "description": "AWS documentation URL (docs.aws.amazon.com or aws.amazon.com)"
+        },
+        "start_index": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Starting character offset for pagination"
+        },
+        "max_length": {
+          "type": "integer",
+          "minimum": 500,
+          "maximum": 50000,
+          "description": "Maximum number of characters to return"
+        }
+      },
+      "required": ["url"],
+      "additionalProperties": false
+    }
+    ```
+
+- **Function name:** `aws_knowledge_recommend`
+  - **Description:** Request additional AWS documentation recommendations related to the provided page.
+  - **Parameters:**
+    ```json
+    {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "description": "Seed URL used to generate recommendations"
+        }
+      },
+      "required": ["url"],
+      "additionalProperties": false
+    }
+    ```
+
+- **Usage tips:**
+  - Invoke `aws_knowledge_search` before giving detailed answers to confirm up-to-date guidance.
+  - Use `aws_knowledge_read` to quote specific sections or obtain code samples.
+  - Use `aws_knowledge_recommend` to suggest follow-up reading or discover recent announcements.
+
+## 5. Tavily Web Intelligence (Hosted MCP)
+
+These tools connect to the hosted Tavily MCP server for live web search, extraction, crawling, and site mapping.
+
+- **Function name:** `tavily_search`
+  - **Description:** Real-time web search across the public internet.
+  - **Parameters:**
+    ```json
+    {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "Search query to send to Tavily"
+        },
+        "max_results": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "description": "Cap the number of results (default 5)"
+        },
+        "search_depth": {
+          "type": "string",
+          "enum": ["basic", "advanced"],
+          "description": "Use advanced when the user explicitly requests deeper research"
+        },
+        "topic": {
+          "type": "string",
+          "enum": ["general", "news", "finance"],
+          "description": "Map the request to the relevant Tavily domain agent"
+        },
+        "time_range": {
+          "type": "string",
+          "enum": ["day", "week", "month", "year", "d", "w", "m", "y"],
+          "description": "Restrict results to a recent window"
+        },
+        "include_domains": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Domains to prioritise (comma-separated string also accepted)"
+        },
+        "exclude_domains": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Domains to avoid"
+        },
+        "include_raw_content": {
+          "type": "boolean",
+          "description": "Return cleaned HTML for each result"
+        }
+      },
+      "required": ["query"],
+      "additionalProperties": false
+    }
+    ```
+- **Usage tips:** Kick off with search whenever the user asks for current information or when the knowledge cutoff might be a concern.
+
+- **Function name:** `tavily_extract`
+  - **Parameters:**
+    ```json
+    {
+      "type": "object",
+      "properties": {
+        "urls": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "URLs to summarise or read"
+        },
+        "extract_depth": {
+          "type": "string",
+          "enum": ["basic", "advanced"],
+          "description": "Advanced handles richer scraping"
+        },
+        "format": {
+          "type": "string",
+          "enum": ["markdown", "text"],
+          "description": "Return format (markdown recommended)"
+        },
+        "include_images": {
+          "type": "boolean",
+          "description": "Include discovered images"
+        }
+      },
+      "required": ["urls"],
+      "additionalProperties": false
+    }
+    ```
+
+- **Function name:** `tavily_crawl`
+  - **Description:** Depth-first crawl that returns content from multiple pages under a root.
+  - **Key parameters:** `url`, optional `max_depth`, `limit`, `instructions`, `select_paths`, `exclude_paths`, `allow_external`.
+
+- **Function name:** `tavily_map`
+  - **Description:** Generates a site map (graph of URLs) without extracting page bodies.
+  - **Key parameters:** `url`, `max_depth`, `max_breadth`, `limit`, inclusion/exclusion pattern controls.
+
+- **Usage tips:**
+  - Chain `tavily_search` → `tavily_extract` to get citations from top results.
+  - Use `tavily_map` to plan a crawl, then `tavily_crawl` for deep-dives.
+  - Respect user constraints (domains to include/exclude, desired depth) by wiring them into the arguments.

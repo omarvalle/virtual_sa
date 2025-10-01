@@ -66,3 +66,35 @@ export function getExcalidrawMcpUrl(): string {
 export function getExcalidrawMcpSessionId(): string {
   return getOptionalEnv('EXCALIDRAW_MCP_SESSION_ID') ?? 'primary-session';
 }
+
+export function isAwsKnowledgeMcpEnabled(): boolean {
+  return (readEnv('AWS_KNOWLEDGE_MCP_ENABLED') ?? 'false').toLowerCase() === 'true';
+}
+
+export function getAwsKnowledgeMcpUrl(): string {
+  return getOptionalEnv('AWS_KNOWLEDGE_MCP_URL') ?? 'https://knowledge-mcp.global.api.aws';
+}
+
+export function isTavilyMcpEnabled(): boolean {
+  const link = getOptionalEnv('TAVILY_MCP_LINK');
+  const key = getOptionalEnv('TAVILY_API_KEY');
+  return Boolean(link && link.trim().length > 0) || Boolean(key && key.trim().length > 0);
+}
+
+export function getTavilyMcpUrl(): string {
+  const rawLink = getOptionalEnv('TAVILY_MCP_LINK')?.trim();
+  const key = getOptionalEnv('TAVILY_API_KEY')?.trim();
+
+  if (rawLink && rawLink.includes('tavilyApiKey=')) {
+    return rawLink;
+  }
+
+  const base = rawLink && rawLink.length > 0 ? rawLink : 'https://mcp.tavily.com/mcp/';
+
+  if (!key || key.length === 0) {
+    throw new Error('TAVILY_API_KEY must be set when TAVILY_MCP_LINK does not include a tavilyApiKey query parameter.');
+  }
+
+  const separator = base.includes('?') ? '&' : '?';
+  return `${base}${separator}tavilyApiKey=${encodeURIComponent(key)}`;
+}

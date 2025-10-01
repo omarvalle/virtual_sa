@@ -13,8 +13,23 @@ export type RealtimeEventHandlers = {
   onResponseDelta?: (responseId: string, textDelta: string) => void;
   onResponseCompleted?: (responseId: string) => void;
   onFunctionCall?: (command: CanvasCommand) => void;
+  onExternalToolCall?: (payload: {
+    name: string;
+    arguments: Record<string, unknown>;
+    responseId: string;
+  }) => void;
   onDebugEvent?: (event: RealtimeEvent) => void;
 };
+
+const EXTERNAL_TOOL_NAMES = new Set([
+  'aws_knowledge_search',
+  'aws_knowledge_read',
+  'aws_knowledge_recommend',
+  'tavily_search',
+  'tavily_extract',
+  'tavily_crawl',
+  'tavily_map',
+]);
 
 function extractTextDelta(delta: unknown): string {
   if (typeof delta === 'string') {
@@ -118,6 +133,16 @@ export function parseRealtimeEvent(
       if (responseId && callName && typeof args === 'string') {
         try {
           const parsedArgs = JSON.parse(args);
+          if (EXTERNAL_TOOL_NAMES.has(callName)) {
+            if (parsedArgs && typeof parsedArgs === 'object') {
+              handlers.onExternalToolCall?.({
+                name: callName,
+                arguments: parsedArgs as Record<string, unknown>,
+                responseId,
+              });
+            }
+            break;
+          }
           const command = translateFunctionCall({ name: callName, arguments: parsedArgs }, sessionId);
           if (command) {
             handlers.onFunctionCall?.(command);

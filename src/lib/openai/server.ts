@@ -1,4 +1,10 @@
-import { getEnv, getOptionalEnv, isExcalidrawMcpEnabled } from '@/lib/config/env';
+import {
+  getEnv,
+  getOptionalEnv,
+  isAwsKnowledgeMcpEnabled,
+  isExcalidrawMcpEnabled,
+  isTavilyMcpEnabled,
+} from '@/lib/config/env';
 import { getVoiceAgentTools } from '@/lib/openai/tools';
 import { VOICE_AGENT_INSTRUCTIONS, VOICE_AGENT_TOOLS } from '@/lib/openai/prompt';
 
@@ -56,7 +62,11 @@ export async function createOpenAIRealtimeSession(): Promise<{
     },
     body: JSON.stringify({
       ...payload,
-      tools: getVoiceAgentTools({ includeExcalidrawMcp: isExcalidrawMcpEnabled() }),
+      tools: getVoiceAgentTools({
+        includeExcalidrawMcp: isExcalidrawMcpEnabled(),
+        includeAwsKnowledge: isAwsKnowledgeMcpEnabled(),
+        includeTavily: isTavilyMcpEnabled(),
+      }),
     }),
   });
 

@@ -64,6 +64,57 @@ export function VoiceSessionPanel() {
     });
   }, []);
 
+  const handleExternalToolCall = useCallback(
+    async ({ name, arguments: toolArgs }: { name: string; arguments: Record<string, unknown> }) => {
+      const namespace = name.startsWith('aws_knowledge')
+        ? 'knowledge'
+        : name.startsWith('tavily_')
+          ? 'tavily'
+          : 'tool';
+
+      const endpoint = namespace === 'knowledge' ? '/api/mcp/aws-knowledge' : '/api/mcp/tavily';
+
+      appendEvent({
+        id: randomId(),
+        type: `${namespace}.request`,
+        label: JSON.stringify({ tool: name, arguments: toolArgs }, null, 2),
+        timestamp: Date.now(),
+      });
+
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ tool: name, arguments: toolArgs }),
+        });
+
+        const body = await response.json().catch(() => ({}));
+
+        if (!response.ok || !body?.success) {
+          const message = body?.message ?? 'External MCP request failed.';
+          throw new Error(message);
+        }
+
+        appendEvent({
+          id: randomId(),
+          type: `${namespace}.result`,
+          label: JSON.stringify(body.result, null, 2),
+          timestamp: Date.now(),
+        });
+      } catch (error) {
+        appendEvent({
+          id: randomId(),
+          type: `${namespace}.error`,
+          label: error instanceof Error ? error.message : 'Failed to execute MCP request.',
+          timestamp: Date.now(),
+        });
+      }
+    },
+    [appendEvent],
+  );
+
   const finalizeTranscript = useCallback((id: string, source: 'assistant' | 'user') => {
     const bufferStore = source === 'assistant' ? responseBuffer.current : userBuffer.current;
     const buffer = bufferStore.get(id);
@@ -184,9 +235,12 @@ export function VoiceSessionPanel() {
             });
           }
         },
+        onExternalToolCall: ({ name, arguments: externalArgs }) => {
+          handleExternalToolCall({ name, arguments: externalArgs });
+        },
       });
     },
-    [appendEvent, finalizeTranscript, upsertBuffer],
+    [appendEvent, finalizeTranscript, handleExternalToolCall, upsertBuffer],
   );
 
   const handleRemoteTrack = useCallback((event: RTCTrackEvent) => {
