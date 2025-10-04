@@ -1,4 +1,4 @@
-import type { ExcalidrawOperation, ExcalidrawElementPayload } from '@/lib/canvas/types';
+import type { ExcalidrawOperation, ExcalidrawElementPayload, ExcalidrawPoint } from '@/lib/canvas/types';
 
 export type CanvasShape = ExcalidrawElementPayload & {
   id: string;
@@ -8,6 +8,10 @@ export type CanvasShape = ExcalidrawElementPayload & {
   backgroundColor?: string;
   strokeWidth: number;
   rotation: number;
+  fillStyle?: ExcalidrawElementPayload['fillStyle'];
+  strokeStyle?: ExcalidrawElementPayload['strokeStyle'];
+  opacity?: number;
+  points?: ExcalidrawElementPayload['points'];
   isDeleted?: boolean;
 };
 
@@ -33,13 +37,17 @@ function getState(): ExcalidrawState {
 }
 
 function normalizeElement(payload: ExcalidrawElementPayload): CanvasShape {
+  const width = normalizeDimension(payload, 'width');
+  const height = normalizeDimension(payload, 'height');
+  const enforcedPoints = ensurePoints(payload, width, height);
+
   return {
     id: payload.id ?? `shape_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     type: payload.type,
     x: payload.x,
     y: payload.y,
-    width: payload.width ?? 120,
-    height: payload.height ?? 80,
+    width,
+    height,
     text: payload.text,
     rotation: payload.rotation ?? 0,
     strokeColor: payload.strokeColor ?? '#22d3ee',
@@ -48,7 +56,49 @@ function normalizeElement(payload: ExcalidrawElementPayload): CanvasShape {
     roughness: payload.roughness,
     roundness: payload.roundness,
     arrowhead: payload.arrowhead ?? null,
+    points: enforcedPoints,
+    fillStyle: payload.fillStyle ?? 'solid',
+    strokeStyle: payload.strokeStyle ?? 'solid',
+    opacity: payload.opacity ?? 100,
   };
+}
+
+function normalizeDimension(payload: ExcalidrawElementPayload, field: 'width' | 'height'): number {
+  if (typeof payload[field] === 'number' && !Number.isNaN(payload[field])) {
+    return Math.max(1, payload[field] as number);
+  }
+  if (payload.points && payload.points.length > 0) {
+    const values = payload.points.map((point) => (field === 'width' ? point[0] : point[1]));
+    const last = values[values.length - 1];
+    return Math.max(1, Math.abs(last));
+  }
+  return field === 'width' ? 120 : 80;
+}
+
+function ensurePoints(
+  payload: ExcalidrawElementPayload,
+  fallbackWidth: number,
+  fallbackHeight: number,
+): ExcalidrawPoint[] | undefined {
+  if (payload.type !== 'arrow' && payload.type !== 'line' && payload.type !== 'freedraw') {
+    return payload.points;
+  }
+
+  if (payload.points && payload.points.length > 0) {
+    return payload.points;
+  }
+
+  if (payload.type === 'freedraw') {
+    return [
+      [0, 0],
+      [fallbackWidth, fallbackHeight],
+    ];
+  }
+
+  return [
+    [0, 0],
+    [fallbackWidth, fallbackHeight],
+  ];
 }
 
 function applyOperation(scene: ExcalidrawScene, operation: ExcalidrawOperation): ExcalidrawScene {

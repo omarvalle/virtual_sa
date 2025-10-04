@@ -7,12 +7,18 @@ Core behaviors:
 
 Canvas guidance:
 - Use "canvas_update_mermaid" to create or refresh Mermaid diagrams that capture system flows, sequences, or topology. Always return the full diagram and include a concise title. Optionally highlight a node via the "focus" field.
-- Use "canvas_update_aws_diagram" when the user wants official AWS iconography or an AWS-specific topology. Provide a detailed prompt describing services, regions, and relationships.
+- Use "aws_generate_diagram" when the user wants official AWS iconography or an AWS-specific topology. Write Python diagrams DSL code (no imports) that captures the requested architecture, using icon classes exactly as returned by \`aws_list_diagram_icons\`.
 - Use "canvas_patch_excalidraw" for free-form sketches, spatial layouts, or annotations. Every call must include an operations array describing the shapes to add, update, remove, or clear the scene. Provide coordinates (x/y), dimensions, and colors so the canvas can render visually.
-- When the Excalidraw MCP tool is available (canvas_request_excalidraw_operations), prefer it for complex or precise shape updates. Provide explicit coordinates, sizes, and colors. The tool returns normalized operations that will be applied to the live canvas.
+- When the Excalidraw MCP tool is available (canvas_request_excalidraw_operations), prefer it for complex or precise shape updates. Always include a \`payload\` describing the action: \`create_elements\` must provide an \`elements\` array with type, x/y, dimensions, and styling; \`update_element\` and \`delete_element\` must include the target \`id\`. The tool returns normalized operations that will be applied to the live canvas.
+- Excalidraw element tips:
+  - Supported \`type\` values include \`rectangle\`, \`ellipse\`, \`diamond\`, \`arrow\`, \`line\`, \`text\`, and \`freedraw\`. There is no triangle primitive—approximate it with \`freedraw\` using three or four points.
+  - Provide a \`points\` array for \`arrow\`, \`line\`, and \`freedraw\` shapes. Points are arrays of \[x,y] offsets relative to the element's \`x\`/\`y\` anchor. Close polygons by ending near the starting point.
+  - Use \`strokeColor\` for the outline, \`backgroundColor\` for fill, and optionally \`fillStyle\` (\`solid\`, \`hachure\`, or \`cross-hatch\`).
+  - Prefer \`update_element\` to adjust position, colors, or size. Reserve \`delete_element\` for explicit removal requests so elements keep their IDs over time.
 
 Research guidance:
 - When the AWS knowledge tools are available, use them to pull official documentation before answering architecture questions. Start with "aws_knowledge_search" to discover relevant material, "aws_knowledge_read" to quote authoritative guidance, and "aws_knowledge_recommend" to surface related resources.
+- When you need icon names or starter templates for diagrams, call "aws_list_diagram_icons" or "aws_get_diagram_examples" before generating code.
 - When live web intelligence is needed, call the Tavily tools. Use "tavily_search" for fresh results, "tavily_extract" to pull full content from URLs, "tavily_crawl" for deeper multi-page exploration, and "tavily_map" to summarize a site's structure.
 
 Workflow suggestions:
@@ -55,29 +61,69 @@ export const VOICE_AGENT_TOOLS = [
   },
   {
     type: 'function',
-    name: 'canvas_update_aws_diagram',
+    name: 'aws_generate_diagram',
     description:
-      'Request an AWS Diagram MCP render using official AWS icons. Use when the user needs AWS-specific visuals.',
+      'Generate an AWS architecture diagram via the diagrams Python DSL. Use official icon names from list_icons. Start code with `with Diagram(...):` and avoid import statements.',
     parameters: {
       type: 'object',
       properties: {
-        prompt: {
+        code: {
           type: 'string',
           description:
-            'Detailed description of the AWS architecture to render, including services, regions, and relationships.',
+            'Python diagrams code that defines the architecture. Begin with `with Diagram(...):` and create AWS resources using the provided icon classes. Do not include imports.',
+          minLength: 20,
         },
-        layout: {
-          type: 'string',
-          enum: ['diagram', 'network', 'serverless', 'custom'],
-          description: 'Preferred layout style.',
+        filename: {
+          type: ['string', 'null'],
+          description: 'Optional filename for the generated diagram image.',
         },
-        output_format: {
-          type: 'string',
-          enum: ['svg', 'png'],
-          description: 'Desired output format for the generated asset.',
+        timeout: {
+          type: 'integer',
+          minimum: 10,
+          maximum: 300,
+          description: 'Optional timeout in seconds for diagram generation (default 90).',
         },
       },
-      required: ['prompt'],
+      required: ['code'],
+      additionalProperties: false,
+    },
+  },
+  {
+    type: 'function',
+    name: 'aws_list_diagram_icons',
+    description:
+      'Retrieve available icon classes from the AWS Diagram MCP server. Use before generating diagrams when you need the exact class names.',
+    parameters: {
+      type: 'object',
+      properties: {
+        provider_filter: {
+          type: ['string', 'null'],
+          description: 'Optional provider filter, e.g., "aws", "gcp".',
+        },
+        service_filter: {
+          type: ['string', 'null'],
+          description: 'Optional service filter, e.g., "compute", "database".',
+        },
+      },
+      required: [],
+      additionalProperties: false,
+    },
+  },
+  {
+    type: 'function',
+    name: 'aws_get_diagram_examples',
+    description:
+      'Fetch example diagrams code snippets (AWS, sequence, flow, etc.) to use as references before generating a custom diagram.',
+    parameters: {
+      type: 'object',
+      properties: {
+        diagram_type: {
+          type: ['string', 'null'],
+          enum: ['aws', 'sequence', 'flow', 'class', 'k8s', 'onprem', 'custom', 'all', null],
+          description: 'Optional diagram category to retrieve examples for.',
+        },
+      },
+      required: [],
       additionalProperties: false,
     },
   },

@@ -8,7 +8,9 @@ Welcome aboard! This log captures the current state of the Virtual Solutions Arc
 - Excalidraw updates partially work: ad-hoc payloads are normalized and we at least render fallback shapes, but rectangles often land with default (ellipse-like) styling/positions. Fallback logic currently infers shapes from the summary when operations are insufficient.
 - AWS Knowledge MCP integration is available behind the `AWS_KNOWLEDGE_MCP_ENABLED` flag. When enabled, the agent can search (`aws_knowledge_search`), read (`aws_knowledge_read`), and recommend (`aws_knowledge_recommend`) official guidance.
 - Tavily MCP integration is now wired: if `TAVILY_API_KEY` (or `TAVILY_MCP_LINK`) is present, the voice agent can run real-time search (`tavily_search`), extraction (`tavily_extract`), crawls (`tavily_crawl`), and site maps (`tavily_map`).
-- Excalidraw MCP server integration is **deferred**. We will eventually host it on AWS; for now the voice agent should continue using `canvas_patch_excalidraw` while we tighten normalization.
+- AWS Diagram MCP is proxied via `POST /api/mcp/aws-diagram`; configure `AWS_DIAGRAM_MCP_URL` and `MCP_SERVICE_API_KEY`/`CANVAS_API_KEY` so the agent can request official diagram renders (`aws_generate_diagram`).
+- Excalidraw MCP server integration is now toggled on for local validation. The agent calls the HTTP wrapper (`/tools/call` on port 3100); the response is normalized into `excalidraw.patch` operations that immediately update the local canvas.
+- Canvas preview now supports dragging shapes with the pointer, including arrow endpoints for quick resizing. User drags emit `update_element` operations so the shared scene stays in sync.
 
 ## Priority Files to Review
 - `README.md` – stack overview and setup expectations.
@@ -21,16 +23,18 @@ Welcome aboard! This log captures the current state of the Virtual Solutions Arc
 - `src/lib/canvas/{server,excalidrawState,bridge}.ts` – in-memory storage, shape normalization, and function-call translation glue.
 - `src/components/canvas/{MermaidPreview,ExcalidrawPreview}.tsx` – render the current diagrams on the page.
 
-## New Capability: AWS Knowledge + Tavily MCP Integrations
-The hosted `aws-knowledge-mcp-server` runs behind `POST /api/mcp/aws-knowledge` and the Tavily MCP server lives at `POST /api/mcp/tavily`. Function tools are added dynamically based on environment toggles:
+## New Capability: AWS Knowledge + Tavily + AWS Diagram MCP Integrations
+The hosted `aws-knowledge-mcp-server` runs behind `POST /api/mcp/aws-knowledge`, the Tavily MCP server lives at `POST /api/mcp/tavily`, and the AWS Diagram wrapper is proxied via `POST /api/mcp/aws-diagram`. Function tools are added dynamically based on environment toggles:
 - `aws_knowledge_search`, `aws_knowledge_read`, `aws_knowledge_recommend` when `AWS_KNOWLEDGE_MCP_ENABLED=true`.
 - `tavily_search`, `tavily_extract`, `tavily_crawl`, `tavily_map` when `TAVILY_API_KEY` or `TAVILY_MCP_LINK` is present.
+- `aws_generate_diagram`, `aws_list_diagram_icons`, `aws_get_diagram_examples` when `AWS_DIAGRAM_MCP_URL` is configured.
 
 ### Highlights
 - Environment toggles and defaults live in `src/lib/config/env.ts`.
 - The proxy clients (`src/lib/mcp/awsKnowledge.ts`, `src/lib/mcp/tavily.ts`) perform JSON-RPC/SSE calls and normalize responses for the UI.
-- `VoiceSessionPanel` surfaces request/result/error events for both knowledge and Tavily workflows so you can audit calls in real time.
+- `VoiceSessionPanel` surfaces request/result/error events for all external workflows and renders diagram PNGs inline when returned from the AWS Diagram wrapper.
 - Prompt docs (`docs/voice_prompt_instructions.md`, `docs/agent_tools.md`) and runtime instructions have been updated to teach the agent when to call each tool.
+- The AWS diagram bridge lives at `src/app/api/mcp/aws-diagram/route.ts` and reuses the shared `X-API-Key` header, allowing hosted MCP servers to plug in without changing the voice UI.
 
 ### Follow-up Ideas
 1. Feed high-signal answers back into the conversation automatically (e.g., append a note or summarize the top result before asking the user to continue).

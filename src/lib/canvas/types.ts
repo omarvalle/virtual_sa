@@ -21,9 +21,11 @@ export type CanvasCommandBatch = {
   commands: CanvasCommand[];
 };
 
+export type ExcalidrawPoint = [number, number];
+
 export type ExcalidrawElementPayload = {
   id?: string;
-  type: 'rectangle' | 'ellipse' | 'diamond' | 'arrow' | 'text';
+  type: 'rectangle' | 'ellipse' | 'diamond' | 'arrow' | 'text' | 'freedraw' | 'line';
   x: number;
   y: number;
   width?: number;
@@ -36,6 +38,10 @@ export type ExcalidrawElementPayload = {
   roughness?: number;
   roundness?: number;
   arrowhead?: 'arrow' | 'bar' | 'circle' | null;
+  points?: ExcalidrawPoint[];
+  fillStyle?: 'solid' | 'hachure' | 'cross-hatch' | 'zigzag' | 'dots';
+  strokeStyle?: 'solid' | 'dashed' | 'dotted';
+  opacity?: number;
 };
 
 export type ExcalidrawOperation =

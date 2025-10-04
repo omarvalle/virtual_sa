@@ -14,9 +14,10 @@ const EXCALIDRAW_MCP_TOOL = {
       payload: {
         type: 'object',
         description: 'Operation-specific payload forwarded to the MCP server.',
+        additionalProperties: true,
       },
     },
-    required: ['operation'],
+    required: ['operation', 'payload'],
     additionalProperties: false,
   },
 } as const;

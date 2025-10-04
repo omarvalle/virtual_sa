@@ -125,36 +125,38 @@ These tool definitions will guide the voice agent when interacting with the canv
 
 ## 3. AWS Diagram Tool (MCP-backed)
 
-- **Function name:** `canvas_update_aws_diagram`
+- **Function name:** `aws_generate_diagram`
 - **Description:**
-  > Request AWS Diagram MCP to render an AWS-specific architecture view. Use when the user wants official AWS icons or is focused on service-specific topology.
+  > Generate an AWS architecture diagram by sending Python code that uses the diagrams DSL. The runtime already imports the required modules; start code with `with Diagram(...)` and instantiate icon classes exactly as returned by `list_icons`.
 - **Parameters:**
   ```json
   {
     "type": "object",
     "properties": {
-      "prompt": {
+      "code": {
         "type": "string",
-        "description": "Detailed description of the AWS architecture to render"
+        "description": "Python diagrams code without import statements (begin with `with Diagram(...):`)."
       },
-      "layout": {
-        "type": "string",
-        "enum": ["diagram", "network", "serverless", "custom"],
-        "description": "Preferred layout style"
+      "filename": {
+        "type": ["string", "null"],
+        "description": "Optional custom filename for the generated PNG."
       },
-      "output_format": {
-        "type": "string",
-        "enum": ["svg", "png"],
-        "default": "svg"
+      "timeout": {
+        "type": "integer",
+        "minimum": 10,
+        "maximum": 300,
+        "description": "Optional timeout in seconds (default 90)."
       }
     },
-    "required": ["prompt"],
+    "required": ["code"],
     "additionalProperties": false
   }
   ```
 - **Usage tips:**
-  - Include key services, regions, availability zones, and data flows in the prompt.
-  - The resulting asset will be stored and referenced in the canvas; ensure subsequent comments acknowledge the AWS diagram.
+  - Call `list_icons` first if you need the exact icon names.
+  - Build structured diagrams: use clusters for VPCs, edges for connections, etc., mirroring the user’s request.
+  - The server returns the path to the generated diagram file; surface that to the user (and optionally fetch the asset for preview).
+  - Enable the hosted bridge by setting `AWS_DIAGRAM_MCP_URL` and `MCP_SERVICE_API_KEY`/`CANVAS_API_KEY`. The voice app proxies calls via `POST /api/mcp/aws-diagram`.
 
 ## Prompt Guidance Snippet
 
@@ -165,7 +167,7 @@ Mermaid tool (`canvas.update_mermaid`) is best for quick topology sketches, sequ
 
 Excalidraw tool (`canvas.patch_excalidraw`) is for free-form drawings, annotations, or moving existing elements.
 
-AWS Diagram tool (`canvas.update_aws_diagram`) produces official AWS iconography via the AWS Diagram MCP server; prefer it when the user wants AWS service diagrams or icon accuracy.
+AWS Diagram tool (`aws_generate_diagram`) produces official AWS iconography via the AWS Diagram MCP server; provide Python diagrams DSL code using the retrieved icon classes.
 
 Each time you call a tool, summarize the change verbally for the user.
 ```
@@ -186,16 +188,20 @@ We'll embed this schema in our server configuration and later in AgentCore's Gat
       },
       "payload": {
         "type": "object",
-        "description": "Operation-specific payload forwarded to the MCP server"
+        "description": "Operation-specific payload forwarded to the MCP server",
+        "additionalProperties": true
       }
     },
-    "required": ["operation"],
+    "required": ["operation", "payload"],
     "additionalProperties": false
   }
   ```
 - **Usage tips:**
-  - Always include coordinates, dimensions, and colors when creating elements.
-  - Ensure `payload.id` is provided for update or delete operations.
+  - Always include coordinates, dimensions, colors, and (when needed) a `points` array describing relative offsets from the element's `x`/`y` anchor.
+  - Supported `type` values include `rectangle`, `ellipse`, `diamond`, `arrow`, `line`, `text`, and `freedraw`. There is no triangle primitive—approximate it with `freedraw` using three or four points.
+  - Provide `points` for `arrow`, `line`, and `freedraw`; the array should look like `[[x1, y1], [x2, y2], ...]`. Close shapes by ending near the starting point.
+  - Use `strokeColor` for outlines, `backgroundColor` for fills, and `fillStyle` (`solid`, `hachure`, `cross-hatch`) for shading styles.
+  - Use `update_element` to adjust existing shapes so they retain IDs. Call `delete_element` only when the user explicitly wants a removal.
   - Prefer this tool over `canvas_patch_excalidraw` when precise control is required and the MCP server is available.
 
 ## 4. AWS Knowledge Tools (MCP-backed)
