@@ -72,6 +72,7 @@ export function VoiceSessionPanel() {
   const userBuffer = useRef<Map<string, TranscriptBuffer>>(new Map());
   const [transcripts, setTranscripts] = useState<TranscriptLine[]>([]);
   const [events, setEvents] = useState<VoiceDebugEvent[]>([]);
+  const contextInstructionsRef = useRef<string | null>(null);
 
   const statusLabel = useMemo(() => {
     switch (status) {
@@ -95,6 +96,109 @@ export function VoiceSessionPanel() {
       return next;
     });
   }, []);
+
+  const loadSessionContext = useCallback(async () => {
+    try {
+      const response = await fetch('/api/conversation/context', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ sessionId: SESSION_ID }),
+      });
+
+      if (!response.ok) {
+        const message = await response.text().catch(() => 'Failed to load memory context.');
+        appendEvent({
+          id: randomId(),
+          type: 'memory.error',
+          label: message,
+          timestamp: Date.now(),
+        });
+        contextInstructionsRef.current = null;
+        return null;
+      }
+
+      const body = (await response.json()) as { instructions?: string };
+      contextInstructionsRef.current = body.instructions ?? null;
+      if (body.instructions) {
+        appendEvent({
+          id: randomId(),
+          type: 'memory.context',
+          label: body.instructions,
+          timestamp: Date.now(),
+        });
+      } else {
+        appendEvent({
+          id: randomId(),
+          type: 'memory.context',
+          label: 'No prior summary available for this session.',
+          timestamp: Date.now(),
+        });
+      }
+      return body;
+    } catch (error) {
+      appendEvent({
+        id: randomId(),
+        type: 'memory.error',
+        label: error instanceof Error ? error.message : 'Failed to load session context.',
+        timestamp: Date.now(),
+      });
+      contextInstructionsRef.current = null;
+      return null;
+    }
+  }, [appendEvent]);
+
+  const persistSessionSummary = useCallback(
+    async (turns: TranscriptLine[]) => {
+      if (turns.length === 0) {
+        return;
+      }
+
+      try {
+        console.info('[memory] Persisting conversation summary', {
+          turns: turns.length,
+        });
+        const response = await fetch('/api/conversation/summarize', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            sessionId: SESSION_ID,
+            transcripts: turns.map((turn) => ({
+              speaker: turn.speaker,
+              text: turn.text,
+            })),
+          }),
+        });
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          appendEvent({
+            id: randomId(),
+            type: 'memory.error',
+            label: body?.message ?? 'Failed to persist conversation summary (non-OK response).',
+            timestamp: Date.now(),
+          });
+        } else {
+          appendEvent({
+            id: randomId(),
+            type: 'memory.summary',
+            label: 'Conversation summary stored.',
+            timestamp: Date.now(),
+          });
+        }
+      } catch (error) {
+        appendEvent({
+          id: randomId(),
+          type: 'memory.error',
+          label: error instanceof Error ? error.message : 'Failed to persist conversation summary.',
+          timestamp: Date.now(),
+        });
+      }
+    },
+    [appendEvent],
+  );
 
   const sendToolEnvelope = useCallback(
     (payload: Record<string, unknown>) => {
@@ -271,7 +375,9 @@ export function VoiceSessionPanel() {
               const lines = results.slice(0, 3).map((item, index) => {
                 const title = item.title ? item.title.trim() : 'Untitled result';
                 const url = item.url ? item.url.trim() : '';
-                const published = item.published ? ` (${item.published})` : '';
+                const publishedValue = (item as { published?: string; published_date?: string }).published ??
+                  (item as { published?: string; published_date?: string }).published_date;
+                const published = publishedValue ? ` (${publishedValue})` : '';
                 return `${index + 1}. ${title}${published}${url ? ` — ${url}` : ''}`;
               });
 
@@ -635,6 +741,7 @@ export function VoiceSessionPanel() {
 
   const toggleSession = useCallback(async () => {
     if (status === 'active') {
+      await persistSessionSummary(transcripts);
       sessionHandles?.localStream.getTracks().forEach((track) => track.stop());
       sessionHandles?.peerConnection.close();
       setSessionHandles(null);
@@ -645,6 +752,7 @@ export function VoiceSessionPanel() {
       if (remoteAudioRef.current) {
         remoteAudioRef.current.srcObject = null;
       }
+      contextInstructionsRef.current = null;
       setStatus('idle');
       setError(null);
       return;
@@ -654,10 +762,18 @@ export function VoiceSessionPanel() {
     setError(null);
 
     try {
+      await loadSessionContext();
       const session = await createRealtimeSession(
         async () => {
+          const instructions = contextInstructionsRef.current;
           const response = await fetch('/api/voice/token', {
             method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(
+              instructions && instructions.length > 0 ? { instructions } : {},
+            ),
           });
 
           if (!response.ok) {
@@ -689,8 +805,11 @@ export function VoiceSessionPanel() {
     handleConnectionStateChange,
     handleControlMessage,
     handleRemoteTrack,
+    loadSessionContext,
+    persistSessionSummary,
     sessionHandles,
     status,
+    transcripts,
   ]);
 
   return (

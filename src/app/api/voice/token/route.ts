@@ -17,7 +17,7 @@ function isOriginAllowed(originHeader: string | null): boolean {
   return allowedOrigins.includes(originHeader.toLowerCase());
 }
 
-export async function POST() {
+export async function POST(request: Request) {
   const origin = headers().get('origin');
 
   if (!isOriginAllowed(origin)) {
@@ -41,7 +41,18 @@ export async function POST() {
   }
 
   try {
-    const session = await createOpenAIRealtimeSession();
+    let additionalInstructions: string | undefined;
+
+    try {
+      const body = (await request.json()) as { instructions?: string };
+      if (body && typeof body.instructions === 'string' && body.instructions.trim().length > 0) {
+        additionalInstructions = body.instructions;
+      }
+    } catch (error) {
+      // Body is optional; ignore parsing errors and fall back to defaults.
+    }
+
+    const session = await createOpenAIRealtimeSession({ additionalInstructions });
 
     console.info('Issued OpenAI realtime session token');
 

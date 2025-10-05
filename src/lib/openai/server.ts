@@ -21,6 +21,9 @@ type RealtimeSessionRequest = {
   instructions?: string;
   tools?: RealtimeToolDefinition[];
   tool_choice?: 'auto' | 'none';
+  input_audio_transcription?: {
+    model: string;
+  };
 };
 
 type RealtimeSessionResponse = {
@@ -32,7 +35,11 @@ type RealtimeSessionResponse = {
   url?: string;
 };
 
-export async function createOpenAIRealtimeSession(): Promise<{
+type CreateRealtimeOptions = {
+  additionalInstructions?: string;
+};
+
+export async function createOpenAIRealtimeSession(options: CreateRealtimeOptions = {}): Promise<{
   clientSecret: string;
   realtimeUrl: string;
   sessionId?: string;
@@ -42,11 +49,18 @@ export async function createOpenAIRealtimeSession(): Promise<{
   const voice = getOptionalEnv('OPENAI_REALTIME_VOICE');
   const realtimeBaseUrl = getEnv('OPENAI_REALTIME_API_URL');
 
+  const mergedInstructions = options.additionalInstructions
+    ? `${VOICE_AGENT_INSTRUCTIONS}\n\nSession context:\n${options.additionalInstructions}`
+    : VOICE_AGENT_INSTRUCTIONS;
+
   const payload: RealtimeSessionRequest = {
     model,
-    instructions: VOICE_AGENT_INSTRUCTIONS,
+    instructions: mergedInstructions,
     tools: VOICE_AGENT_TOOLS.map((tool) => ({ ...tool })) as RealtimeToolDefinition[],
     tool_choice: 'auto',
+    input_audio_transcription: {
+      model: getOptionalEnv('OPENAI_TRANSCRIPTION_MODEL', 'whisper-1'),
+    },
   };
 
   if (voice) {

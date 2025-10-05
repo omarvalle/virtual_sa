@@ -25,6 +25,7 @@ Voice-first web application that blends OpenAI's realtime agents with AWS Bedroc
    - Set `AWS_KNOWLEDGE_MCP_ENABLED=true` to allow the agent to call the hosted AWS Knowledge MCP server. Override `AWS_KNOWLEDGE_MCP_URL` if you proxy the service.
    - Provide `TAVILY_API_KEY` (and optionally `TAVILY_MCP_LINK`) to enable live web search via Tavily. The link is optional; if omitted we fall back to `https://mcp.tavily.com/mcp/?tavilyApiKey=<key>`.
    - The AWS Diagram MCP now runs co-located by default. Ensure `uv` (Astral) and Graphviz are installed so `uvx awslabs.aws-diagram-mcp-server` can execute. Only set `AWS_DIAGRAM_MCP_MODE=remote` (and `AWS_DIAGRAM_MCP_URL`) if you want to hit an external HTTP bridge; otherwise no additional configuration is required.
+   - (Optional) Configure long-term memory with SQLite. Download the [`sqlite-vec`](https://github.com/asg017/sqlite-vec) extension and set `SQLITE_VEC_PATH` to the shared library so cosine search can be performed inside the database. The SQLite database lives at `data/app.db` and is created automatically.
    - AWS, GitHub, and Claude settings when those integrations come online.
 4. **Run the development server**:
    ```bash
@@ -54,4 +55,4 @@ Use an `amazonlinux:2023` image with:
 
 ## Status
 
-Voice conversations stream transcripts in real time, the agent prompt is primed to call canvas tools, and Mermaid commands render to SVG previews. MCP integrations now cover AWS Knowledge (official documentation), Tavily (live web search/extraction), and co-located Excalidraw/AWS Diagram servers. Remote HTTP bridges remain optional via `EXCALIDRAW_MCP_MODE=remote` / `AWS_DIAGRAM_MCP_MODE=remote`. Next milestones include Excalidraw scene management hardening and Claude-driven deployments.
+Voice conversations stream transcripts in real time, the agent prompt is primed to call canvas tools, and Mermaid commands render to SVG previews. MCP integrations now cover AWS Knowledge (official documentation), Tavily (live web search/extraction), and co-located Excalidraw/AWS Diagram servers. Remote HTTP bridges remain optional via `EXCALIDRAW_MCP_MODE=remote` / `AWS_DIAGRAM_MCP_MODE=remote`. A lightweight SQLite-backed memory service keeps recent summaries, TODOs, and vector-searchable highlights so returning users can pick up where they left off. Next milestones include Excalidraw scene management hardening and Claude-driven deployments.

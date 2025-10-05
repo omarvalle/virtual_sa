@@ -5,6 +5,7 @@
 - **Realtime tool payloads**: `canvas_request_excalidraw_operations` must include both `operation` and `payload` to avoid empty requests hitting the MCP wrapper.
 - **Excalidraw prompts**: remind yourself (and the agent) that `points` are relative offsets, triangle == `freedraw`, and colors use `strokeColor`/`backgroundColor`/`fillStyle`.
 - **MCP modes**: `EXCALIDRAW_MCP_MODE` defaults to local; flip to `remote` only when you need the HTTP wrapper.
+- **Memory plumbing**: SQLite lives at `data/app.db`. Load `sqlite-vec` when available; fall back to JS cosine similarity if the extension fails to load.
 
 ## TODO
 - keep this list up to date as new recurring issues surface.
