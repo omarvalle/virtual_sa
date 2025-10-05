@@ -56,15 +56,24 @@ export function getCsvEnv(name: string): string[] {
     .filter(Boolean);
 }
 export function isExcalidrawMcpEnabled(): boolean {
-  return (readEnv('EXCALIDRAW_MCP_ENABLED') ?? 'false').toLowerCase() === 'true';
+  const explicit = readEnv('EXCALIDRAW_MCP_ENABLED');
+  if (explicit !== undefined && explicit !== null && explicit !== '') {
+    return explicit.toLowerCase() === 'true';
+  }
+  return getExcalidrawMcpMode() === 'local';
 }
 
 export function getExcalidrawMcpUrl(): string {
-  return getOptionalEnv('EXCALIDRAW_MCP_URL') ?? 'http://localhost:3333';
+  return getOptionalEnv('EXCALIDRAW_MCP_URL') ?? 'http://127.0.0.1:3100';
 }
 
 export function getExcalidrawMcpSessionId(): string {
   return getOptionalEnv('EXCALIDRAW_MCP_SESSION_ID') ?? 'primary-session';
+}
+
+export function getExcalidrawMcpMode(): 'local' | 'remote' {
+  const value = (readEnv('EXCALIDRAW_MCP_MODE') ?? 'local').toLowerCase();
+  return value === 'remote' ? 'remote' : 'local';
 }
 
 export function isAwsKnowledgeMcpEnabled(): boolean {
@@ -97,4 +106,32 @@ export function getTavilyMcpUrl(): string {
 
   const separator = base.includes('?') ? '&' : '?';
   return `${base}${separator}tavilyApiKey=${encodeURIComponent(key)}`;
+}
+
+export function isAwsDiagramMcpEnabled(): boolean {
+  const explicit = readEnv('AWS_DIAGRAM_MCP_ENABLED');
+  if (explicit !== undefined && explicit !== null && explicit !== '') {
+    return explicit.toLowerCase() === 'true';
+  }
+  if (getAwsDiagramMcpMode() === 'local') {
+    return true;
+  }
+  return Boolean(getOptionalEnv('AWS_DIAGRAM_MCP_URL'));
+}
+
+export function getAwsDiagramMcpUrl(): string {
+  const url = getOptionalEnv('AWS_DIAGRAM_MCP_URL');
+  if (!url) {
+    throw new Error('AWS_DIAGRAM_MCP_URL is not configured.');
+  }
+  return url;
+}
+
+export function getAwsDiagramMcpMode(): 'local' | 'remote' {
+  const value = (readEnv('AWS_DIAGRAM_MCP_MODE') ?? 'local').toLowerCase();
+  return value === 'remote' ? 'remote' : 'local';
+}
+
+export function getMcpServiceApiKey(): string | undefined {
+  return getOptionalEnv('MCP_SERVICE_API_KEY') ?? getOptionalEnv('CANVAS_API_KEY');
 }

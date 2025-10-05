@@ -156,7 +156,8 @@ These tool definitions will guide the voice agent when interacting with the canv
   - Call `list_icons` first if you need the exact icon names.
   - Build structured diagrams: use clusters for VPCs, edges for connections, etc., mirroring the user’s request.
   - The server returns the path to the generated diagram file; surface that to the user (and optionally fetch the asset for preview).
-  - Enable the hosted bridge by setting `AWS_DIAGRAM_MCP_URL` and `MCP_SERVICE_API_KEY`/`CANVAS_API_KEY`. The voice app proxies calls via `POST /api/mcp/aws-diagram`.
+  - The tool runs co-located by default (the backend spawns `uvx awslabs.aws-diagram-mcp-server` on demand). Install `uv` and Graphviz locally so PNGs generate successfully.
+  - Switch to a remote/hosted bridge by setting `AWS_DIAGRAM_MCP_MODE=remote` along with `AWS_DIAGRAM_MCP_URL` and `MCP_SERVICE_API_KEY`/`CANVAS_API_KEY`. The voice app proxies calls via `POST /api/mcp/aws-diagram` in either mode.
 
 ## Prompt Guidance Snippet
 
@@ -167,7 +168,7 @@ Mermaid tool (`canvas.update_mermaid`) is best for quick topology sketches, sequ
 
 Excalidraw tool (`canvas.patch_excalidraw`) is for free-form drawings, annotations, or moving existing elements.
 
-AWS Diagram tool (`aws_generate_diagram`) produces official AWS iconography via the AWS Diagram MCP server; provide Python diagrams DSL code using the retrieved icon classes.
+AWS Diagram tool (`aws_generate_diagram`) produces official AWS iconography via the bundled AWS Diagram MCP server (or an optional remote bridge); provide Python diagrams DSL code using the retrieved icon classes.
 
 Each time you call a tool, summarize the change verbally for the user.
 ```
@@ -202,6 +203,7 @@ We'll embed this schema in our server configuration and later in AgentCore's Gat
   - Provide `points` for `arrow`, `line`, and `freedraw`; the array should look like `[[x1, y1], [x2, y2], ...]`. Close shapes by ending near the starting point.
   - Use `strokeColor` for outlines, `backgroundColor` for fills, and `fillStyle` (`solid`, `hachure`, `cross-hatch`) for shading styles.
   - Use `update_element` to adjust existing shapes so they retain IDs. Call `delete_element` only when the user explicitly wants a removal.
+  - When the AWS diagram tool runs, the client will place the returned PNG as a single `image` element. Do not attempt to recreate it with individual AWS icons.
   - Prefer this tool over `canvas_patch_excalidraw` when precise control is required and the MCP server is available.
 
 ## 4. AWS Knowledge Tools (MCP-backed)

@@ -5,7 +5,6 @@ const SUPPORTED_COMMANDS: Record<string, CanvasCommandType> = {
   canvas_initialize_excalidraw: 'excalidraw.initialize',
   canvas_patch_excalidraw: 'excalidraw.patch',
   canvas_request_excalidraw_operations: 'excalidraw.sync',
-  canvas_update_aws_diagram: 'aws.diagram.update',
   canvas_append_note: 'note.append',
   canvas_set_metadata: 'metadata.set',
 };
@@ -22,37 +21,37 @@ export function translateFunctionCall(
   const type = SUPPORTED_COMMANDS[call.name];
   if (!type) {
     return null;
-  } else if (type === 'excalidraw.sync') {
-    if (Array.isArray(call.arguments)) {
-      payload = { operations: call.arguments };
-    } else if (!call.arguments || typeof call.arguments !== 'object') {
-      payload = {};
-    } else {
-      payload = call.arguments;
-    }
   }
 
-  let payload: Record<string, unknown> = call.arguments ?? {};
+  const args = call.arguments;
 
-  if (type === 'excalidraw.patch') {
-    if (Array.isArray(call.arguments)) {
-      payload = { operations: call.arguments };
-    } else if (
-      call.arguments &&
-      typeof call.arguments === 'object' &&
-      !Array.isArray(call.arguments) &&
-      !('operations' in call.arguments)
-    ) {
-      const potentialOps = (call.arguments as Record<string, unknown>).operations;
-      if (Array.isArray(potentialOps)) {
-        payload = call.arguments as Record<string, unknown>;
-      } else {
-        payload = {
-          ...(call.arguments as Record<string, unknown>),
-          operations: [],
-        };
-      }
+  let payload: Record<string, unknown>;
+
+  if (type === 'excalidraw.sync') {
+    if (Array.isArray(args)) {
+      payload = { operations: args } as Record<string, unknown>;
+    } else if (args && typeof args === 'object') {
+      payload = { ...(args as Record<string, unknown>) };
+    } else {
+      payload = {};
     }
+  } else if (type === 'excalidraw.patch') {
+    if (Array.isArray(args)) {
+      payload = { operations: args } as Record<string, unknown>;
+    } else if (args && typeof args === 'object' && !Array.isArray(args)) {
+      const clone = { ...(args as Record<string, unknown>) };
+      const operations = (clone as { operations?: unknown }).operations;
+      if (!Array.isArray(operations)) {
+        clone.operations = [];
+      }
+      payload = clone;
+    } else {
+      payload = { operations: [] };
+    }
+  } else if (args && typeof args === 'object' && !Array.isArray(args)) {
+    payload = args as Record<string, unknown>;
+  } else {
+    payload = {};
   }
 
   return {

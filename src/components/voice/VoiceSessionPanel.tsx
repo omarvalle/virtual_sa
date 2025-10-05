@@ -26,6 +26,38 @@ function randomId(fallback?: string) {
   return `evt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function loadImageDimensions(dataUrl: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => {
+      resolve({ width: image.naturalWidth || 640, height: image.naturalHeight || 480 });
+    };
+    image.onerror = (error) => {
+      reject(error);
+    };
+    image.src = dataUrl;
+  });
+}
+
+function constrainDimensions(
+  dimensions: { width: number; height: number },
+  maxWidth = 640,
+  maxHeight = 480,
+  minSize = 120,
+): { width: number; height: number } {
+  const { width, height } = dimensions;
+  if (!width || !height) {
+    return { width: maxWidth, height: maxHeight };
+  }
+
+  const widthScale = maxWidth / width;
+  const heightScale = maxHeight / height;
+  const scale = Math.min(widthScale, heightScale, 1);
+  const scaledWidth = Math.max(minSize, Math.round(width * scale));
+  const scaledHeight = Math.max(minSize, Math.round(height * scale));
+  return { width: scaledWidth, height: scaledHeight };
+}
+
 type TranscriptBuffer = {
   role: TranscriptLine['speaker'];
   text: string;
@@ -64,20 +96,143 @@ export function VoiceSessionPanel() {
     });
   }, []);
 
+  const sendToolEnvelope = useCallback(
+    (payload: Record<string, unknown>) => {
+      if (!sessionHandles?.controlChannel) {
+        return;
+      }
+
+      try {
+        sessionHandles.controlChannel.send(JSON.stringify(payload));
+      } catch (sendError) {
+        appendEvent({
+          id: randomId(),
+          type: 'tool.error',
+          label:
+            sendError instanceof Error
+              ? `Failed to submit tool payload: ${sendError.message}`
+              : 'Failed to submit tool payload.',
+          timestamp: Date.now(),
+        });
+      }
+    },
+    [appendEvent, sessionHandles?.controlChannel],
+  );
+
+  const sendToolResult = useCallback(
+    (
+      responseId: string,
+      callId: string | undefined,
+      content: string,
+      options: { isError?: boolean } = {},
+    ) => {
+      const trimmed = content.length > 4000 ? `${content.slice(0, 4000)}…` : content;
+
+      if (!callId) {
+        sendToolEnvelope({
+          type: 'conversation.item.create',
+          item: {
+            type: 'message',
+            role: 'system',
+            content: [
+              {
+                type: 'input_text',
+                text: trimmed,
+              },
+            ],
+          },
+        });
+        return;
+      }
+
+      sendToolEnvelope({
+        type: 'response.create',
+        response: {
+          id: responseId,
+          status: 'completed' as const,
+          output: [
+            {
+              type: 'tool_result' as const,
+              tool_call_id: callId,
+              content: [
+                {
+                  type: 'text' as const,
+                  text: trimmed,
+                },
+              ],
+              ...(options.isError ? { is_error: true as const } : {}),
+            },
+          ],
+        },
+      });
+    },
+    [sendToolEnvelope],
+  );
+
   const handleExternalToolCall = useCallback(
-    async ({ name, arguments: toolArgs }: { name: string; arguments: Record<string, unknown> }) => {
+    async ({
+      name,
+      arguments: toolArgs,
+      responseId,
+      callId,
+    }: {
+      name: string;
+      arguments: Record<string, unknown>;
+      responseId: string;
+      callId?: string;
+    }) => {
       const namespace = name.startsWith('aws_knowledge')
         ? 'knowledge'
         : name.startsWith('tavily_')
           ? 'tavily'
-          : 'tool';
+          : name.startsWith('aws_')
+            ? 'aws-diagram'
+            : 'tool';
 
-      const endpoint = namespace === 'knowledge' ? '/api/mcp/aws-knowledge' : '/api/mcp/tavily';
+      if (!callId) {
+        appendEvent({
+          id: randomId(),
+          type: `${namespace}.warning`,
+          label: 'Missing call_id for external tool invocation; falling back to system memo.',
+          timestamp: Date.now(),
+        });
+      }
+
+      const endpoint = namespace === 'knowledge'
+        ? '/api/mcp/aws-knowledge'
+        : namespace === 'tavily'
+          ? '/api/mcp/tavily'
+          : namespace === 'aws-diagram'
+            ? '/api/mcp/aws-diagram'
+            : '/api/mcp/tavily';
+
+      const adjustedArguments = (() => {
+        if (namespace !== 'tavily') {
+          return toolArgs;
+        }
+
+        const clone = { ...toolArgs } as Record<string, unknown>;
+
+        if (!('max_results' in clone)) {
+          clone.max_results = 4;
+        }
+        if (!('include_answer' in clone)) {
+          clone.include_answer = 'basic';
+        }
+        if (!('include_raw_content' in clone)) {
+          clone.include_raw_content = false;
+        }
+        if (clone.search_depth === undefined) {
+          clone.search_depth = 'basic';
+        }
+
+        return clone;
+      })();
 
       appendEvent({
         id: randomId(),
         type: `${namespace}.request`,
-        label: JSON.stringify({ tool: name, arguments: toolArgs }, null, 2),
+        label: JSON.stringify({ tool: name, arguments: adjustedArguments }, null, 2),
         timestamp: Date.now(),
       });
 
@@ -87,7 +242,7 @@ export function VoiceSessionPanel() {
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ tool: name, arguments: toolArgs }),
+          body: JSON.stringify({ tool: name, arguments: adjustedArguments }),
         });
 
         const body = await response.json().catch(() => ({}));
@@ -100,9 +255,134 @@ export function VoiceSessionPanel() {
         appendEvent({
           id: randomId(),
           type: `${namespace}.result`,
-          label: JSON.stringify(body.result, null, 2),
+          label: JSON.stringify(body.result ?? body.diagram ?? body, null, 2),
           timestamp: Date.now(),
         });
+
+        const summarise = () => {
+          if (namespace === 'tavily') {
+            const results = (body?.result?.results ?? body?.results ?? []) as Array<{
+              title?: string;
+              url?: string;
+              content?: string;
+              published?: string;
+            }>;
+            if (Array.isArray(results) && results.length > 0) {
+              const lines = results.slice(0, 3).map((item, index) => {
+                const title = item.title ? item.title.trim() : 'Untitled result';
+                const url = item.url ? item.url.trim() : '';
+                const published = item.published ? ` (${item.published})` : '';
+                return `${index + 1}. ${title}${published}${url ? ` — ${url}` : ''}`;
+              });
+
+              const answer =
+                typeof body?.result?.answer === 'string' && body.result.answer.trim().length > 0
+                  ? `Summary: ${body.result.answer.trim()}`
+                  : undefined;
+
+              return [`Tavily ${name} results:`, ...lines, answer ?? '']
+                .filter(Boolean)
+                .join('\n');
+            }
+          }
+
+          if (namespace === 'knowledge') {
+            const segments = (body?.segments ?? body?.result?.content ?? []) as Array<{
+              text?: string;
+            }>;
+            const first = segments.find((segment) => typeof segment?.text === 'string');
+            if (first?.text) {
+              return `AWS Knowledge snippet:\n${first.text.slice(0, 4000)}`;
+            }
+          }
+
+          if (namespace === 'aws-diagram') {
+            const message = body?.diagram?.message ?? 'Generated AWS diagram.';
+            const path = body?.diagram?.path ? ` Diagram path: ${body.diagram.path}` : '';
+            return `${message}${path}`;
+          }
+
+          return JSON.stringify(body.result ?? body.diagram ?? body, null, 2);
+        };
+
+        if (responseId) {
+          sendToolResult(responseId, callId, summarise());
+        }
+
+        if (namespace === 'aws-diagram' && body?.diagram?.imageBase64) {
+          appendEvent({
+            id: randomId(),
+            type: `${namespace}.image`,
+            label: body.diagram.imageBase64,
+            timestamp: Date.now(),
+          });
+
+          const baseImage = body.diagram.imageBase64 as string;
+
+          try {
+            const rawDimensions = await loadImageDimensions(baseImage).catch(() => ({ width: 640, height: 480 }));
+            const { width, height } = constrainDimensions(rawDimensions);
+
+            const addCommand = {
+              id: randomId(),
+              sessionId: SESSION_ID,
+              type: 'excalidraw.patch' as const,
+              payload: {
+                summary: 'Added AWS diagram snapshot to canvas',
+                operations: [
+                  {
+                    kind: 'add_elements',
+                    elements: [
+                      {
+                        id: `diagram_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                        type: 'image',
+                        x: 80,
+                        y: 80,
+                        width,
+                        height,
+                        src: baseImage,
+                        strokeColor: '#0ea5e9',
+                        backgroundColor: 'transparent',
+                      },
+                    ],
+                  },
+                ],
+              },
+              issuedAt: Date.now(),
+              issuedBy: 'user' as const,
+            };
+
+            const result = await postCanvasCommands({
+              sessionId: SESSION_ID,
+              commands: [addCommand],
+            });
+
+            appendEvent({
+              id: addCommand.id,
+              type: 'canvas.command',
+              label: JSON.stringify(addCommand, null, 2),
+              timestamp: Date.now(),
+            });
+
+            if (result.warnings && result.warnings.length > 0) {
+              result.warnings.forEach((warning) => {
+                appendEvent({
+                  id: randomId(),
+                  type: 'canvas.warning',
+                  label: warning,
+                  timestamp: Date.now(),
+                });
+              });
+            }
+          } catch (error) {
+            appendEvent({
+              id: randomId(),
+              type: 'canvas.error',
+              label: error instanceof Error ? error.message : 'Failed to place AWS diagram on canvas.',
+              timestamp: Date.now(),
+            });
+          }
+        }
       } catch (error) {
         appendEvent({
           id: randomId(),
@@ -110,9 +390,18 @@ export function VoiceSessionPanel() {
           label: error instanceof Error ? error.message : 'Failed to execute MCP request.',
           timestamp: Date.now(),
         });
+
+        if (responseId) {
+          sendToolResult(
+            responseId,
+            callId,
+            error instanceof Error ? error.message : 'External MCP request failed.',
+            { isError: true },
+          );
+        }
       }
     },
-    [appendEvent],
+    [appendEvent, sendToolResult],
   );
 
   const finalizeTranscript = useCallback((id: string, source: 'assistant' | 'user') => {
@@ -189,19 +478,98 @@ export function VoiceSessionPanel() {
                 body: JSON.stringify(command.payload ?? {}),
               });
 
-              if (!response.ok) {
-                const body = await response.json().catch(() => ({}));
-                throw new Error(body?.message ?? 'MCP request failed.');
-              }
+              const rawBody = (await response.json().catch(() => ({}))) as {
+                success?: boolean;
+                message?: string;
+                operations?: unknown;
+                summary?: string;
+                warnings?: string[];
+                elements?: unknown;
+                rawResponse?: unknown;
+              };
 
-              const body = (await response.json()) as { success: boolean; result?: unknown };
+              if (!response.ok || !rawBody?.success) {
+                throw new Error(rawBody?.message ?? 'MCP request failed.');
+              }
 
               appendEvent({
                 id: command.id,
                 type: 'canvas.mcp',
-                label: JSON.stringify(body?.result ?? {}, null, 2),
+                label: JSON.stringify(
+                  {
+                    summary: rawBody.summary ?? null,
+                    operations: rawBody.operations ?? [],
+                    elements: rawBody.elements ?? [],
+                  },
+                  null,
+                  2,
+                ),
                 timestamp: Date.now(),
               });
+
+              const operations = Array.isArray(rawBody.operations) ? rawBody.operations : [];
+
+              if (operations.length > 0) {
+                const patchCommand = {
+                  id: randomId(),
+                  sessionId: SESSION_ID,
+                  type: 'excalidraw.patch' as const,
+                  payload: {
+                    operations,
+                    ...(typeof rawBody.summary === 'string' && rawBody.summary.length > 0
+                      ? { summary: rawBody.summary }
+                      : {}),
+                  },
+                  issuedAt: Date.now(),
+                  issuedBy: 'agent' as const,
+                };
+
+                try {
+                  const result = await postCanvasCommands({
+                    sessionId: SESSION_ID,
+                    commands: [patchCommand],
+                  });
+
+                  appendEvent({
+                    id: patchCommand.id,
+                    type: 'canvas.command',
+                    label: JSON.stringify(patchCommand, null, 2),
+                    timestamp: Date.now(),
+                  });
+
+                  if (result.warnings && result.warnings.length > 0) {
+                    result.warnings.forEach((warning) => {
+                      appendEvent({
+                        id: randomId(),
+                        type: 'canvas.warning',
+                        label: warning,
+                        timestamp: Date.now(),
+                      });
+                    });
+                  }
+                } catch (error) {
+                  appendEvent({
+                    id: randomId(),
+                    type: 'canvas.error',
+                    label:
+                      error instanceof Error
+                        ? error.message
+                        : 'Failed to relay MCP canvas operations to server.',
+                    timestamp: Date.now(),
+                  });
+                }
+              }
+
+              if (Array.isArray(rawBody.warnings) && rawBody.warnings.length > 0) {
+                rawBody.warnings.forEach((warning) => {
+                  appendEvent({
+                    id: randomId(),
+                    type: 'canvas.warning',
+                    label: warning,
+                    timestamp: Date.now(),
+                  });
+                });
+              }
 
               return;
             }
@@ -235,8 +603,13 @@ export function VoiceSessionPanel() {
             });
           }
         },
-        onExternalToolCall: ({ name, arguments: externalArgs }) => {
-          handleExternalToolCall({ name, arguments: externalArgs });
+        onExternalToolCall: ({ name, arguments: externalArgs, responseId: extResponseId, callId }) => {
+          handleExternalToolCall({
+            name,
+            arguments: externalArgs,
+            responseId: extResponseId,
+            callId,
+          });
         },
       });
     },

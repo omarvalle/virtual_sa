@@ -17,6 +17,7 @@ export type RealtimeEventHandlers = {
     name: string;
     arguments: Record<string, unknown>;
     responseId: string;
+    callId?: string;
   }) => void;
   onDebugEvent?: (event: RealtimeEvent) => void;
 };
@@ -29,7 +30,40 @@ const EXTERNAL_TOOL_NAMES = new Set([
   'tavily_extract',
   'tavily_crawl',
   'tavily_map',
+  'aws_generate_diagram',
+  'aws_list_diagram_icons',
+  'aws_get_diagram_examples',
 ]);
+
+function extractCallId(value: unknown, depth = 0): string | undefined {
+  if (depth > 6 || value === null || value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    if (typeof record.call_id === 'string' && record.call_id.length > 0) {
+      return record.call_id;
+    }
+
+    for (const key of Object.keys(record)) {
+      const child = record[key];
+      const found = extractCallId(child, depth + 1);
+      if (found) {
+        return found;
+      }
+    }
+  } else if (Array.isArray(value)) {
+    for (const entry of value) {
+      const found = extractCallId(entry, depth + 1);
+      if (found) {
+        return found;
+      }
+    }
+  }
+
+  return undefined;
+}
 
 function extractTextDelta(delta: unknown): string {
   if (typeof delta === 'string') {
@@ -129,6 +163,11 @@ export function parseRealtimeEvent(
     case 'response.function_call_arguments.done': {
       const responseId = parsed?.response?.id ?? parsed?.response_id;
       const callName = parsed?.name ?? parsed?.response?.output?.[0]?.content?.[0]?.name;
+      const callId = typeof parsed?.call_id === 'string'
+        ? parsed.call_id
+        : typeof parsed?.response?.output?.[0]?.content?.[0]?.call_id === 'string'
+          ? parsed.response.output[0].content[0].call_id
+          : extractCallId(parsed);
       const args = parsed?.arguments ?? parsed?.response?.output?.[0]?.content?.[0]?.arguments;
       if (responseId && callName && typeof args === 'string') {
         try {
@@ -139,6 +178,7 @@ export function parseRealtimeEvent(
                 name: callName,
                 arguments: parsedArgs as Record<string, unknown>,
                 responseId,
+                callId: typeof callId === 'string' ? callId : undefined,
               });
             }
             break;

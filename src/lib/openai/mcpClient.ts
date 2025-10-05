@@ -1,4 +1,4 @@
-import { getExcalidrawMcpUrl, getMcpServiceApiKey } from '@/lib/config/env';
+import { getExcalidrawMcpMode, getExcalidrawMcpUrl, getMcpServiceApiKey } from '@/lib/config/env';
 import type { ExcalidrawElementPayload, ExcalidrawOperation, ExcalidrawPoint } from '@/lib/canvas/types';
 
 export type McpOperation = 'create_elements' | 'update_element' | 'delete_element' | 'clear_scene';
@@ -15,7 +15,7 @@ type CallToolResult = {
   raw: unknown;
 };
 
-const ELEMENT_TYPES = new Set(['rectangle', 'ellipse', 'diamond', 'arrow', 'text', 'freedraw', 'line']);
+const ELEMENT_TYPES = new Set(['rectangle', 'ellipse', 'diamond', 'arrow', 'text', 'label', 'freedraw', 'line']);
 
 const RANDOM_PREFIX = 'shape_';
 
@@ -143,9 +143,12 @@ function prepareElementInput(value: unknown, index: number): {
   if (typeof record.opacity === 'number') remote.opacity = record.opacity;
   if (typeof record.text === 'string') remote.text = record.text;
   if (typeof record.fontSize === 'number') remote.fontSize = record.fontSize;
-  if (typeof record.fontFamily === 'string') remote.fontFamily = record.fontFamily;
+  if (typeof record.fontFamily === 'string' || typeof record.fontFamily === 'number') {
+    remote.fontFamily = record.fontFamily;
+  }
   if (typeof record.fillStyle === 'string') remote.fillStyle = record.fillStyle;
   if (typeof record.strokeStyle === 'string') remote.strokeStyle = record.strokeStyle;
+  if (typeof record.src === 'string') remote.src = record.src;
 
   const text = typeof record.text === 'string'
     ? record.text
@@ -178,6 +181,11 @@ function prepareElementInput(value: unknown, index: number): {
   if (typeof record.fillStyle === 'string') fallback.fillStyle = record.fillStyle;
   if (typeof record.strokeStyle === 'string') fallback.strokeStyle = record.strokeStyle;
   if (typeof record.opacity === 'number') fallback.opacity = record.opacity;
+  if (typeof record.fontSize === 'number') fallback.fontSize = record.fontSize;
+  if (typeof record.fontFamily === 'string' || typeof record.fontFamily === 'number') {
+    fallback.fontFamily = String(record.fontFamily);
+  }
+  if (typeof record.src === 'string') fallback.src = record.src;
   if (text) fallback.text = text;
 
   return { remote, fallback };
@@ -319,11 +327,15 @@ function propsFromSanitizedUpdate(payload: Record<string, unknown>): Partial<Exc
       key === 'roughness' ||
       key === 'roundness' ||
       key === 'fontSize' ||
-      key === 'fontFamily' ||
       key === 'fillStyle' ||
       key === 'strokeStyle'
     ) {
       (props as Record<string, unknown>)[key] = value;
+      return;
+    }
+
+    if (key === 'fontFamily') {
+      props.fontFamily = typeof value === 'number' ? String(value) : String(value);
       return;
     }
 
@@ -352,6 +364,17 @@ function propsFromSanitizedUpdate(payload: Record<string, unknown>): Partial<Exc
 export async function callExcalidrawMcp(
   operation: McpOperation,
   payload: Record<string, unknown> = {},
+): Promise<ExcalidrawMcpResult> {
+  const mode = getExcalidrawMcpMode();
+  if (mode === 'remote') {
+    return callExcalidrawMcpRemote(operation, payload);
+  }
+  return callExcalidrawMcpLocal(operation, payload);
+}
+
+async function callExcalidrawMcpRemote(
+  operation: McpOperation,
+  payload: Record<string, unknown>,
 ): Promise<ExcalidrawMcpResult> {
   const baseUrl = getExcalidrawMcpUrl();
   const apiKey = getMcpServiceApiKey();
@@ -460,6 +483,89 @@ export async function callExcalidrawMcp(
         elements,
       };
     }
+
+    default:
+      throw new Error(`Unsupported MCP operation: ${operation}`);
+  }
+}
+
+async function callExcalidrawMcpLocal(
+  operation: McpOperation,
+  payload: Record<string, unknown>,
+): Promise<ExcalidrawMcpResult> {
+  switch (operation) {
+    case 'create_elements': {
+      const sourceElements = Array.isArray(payload.elements)
+        ? (payload.elements as unknown[])
+        : [payload];
+
+      if (sourceElements.length === 0) {
+        throw new Error('create_elements requires at least one element.');
+      }
+
+      const prepared = sourceElements.map((entry, index) => prepareElementInput(entry, index).fallback);
+
+      return {
+        operations: [
+          {
+            kind: 'add_elements',
+            elements: prepared,
+          },
+        ],
+        elements: prepared,
+        summary: `Created ${prepared.length} element${prepared.length === 1 ? '' : 's'}.`,
+      };
+    }
+
+    case 'update_element': {
+      if (typeof payload.id !== 'string' || payload.id.trim().length === 0) {
+        throw new Error('update_element requires payload.id.');
+      }
+
+      const sanitized = sanitizeUpdatePayload(payload);
+      const props = propsFromSanitizedUpdate(sanitized);
+
+      if (Object.keys(props).length === 0) {
+        throw new Error('update_element did not include any properties to modify.');
+      }
+
+      return {
+        operations: [
+          {
+            kind: 'update_element',
+            id: payload.id,
+            props,
+          },
+        ],
+        summary: `Updated element ${payload.id}.`,
+      };
+    }
+
+    case 'delete_element': {
+      if (typeof payload.id !== 'string' || payload.id.trim().length === 0) {
+        throw new Error('delete_element requires payload.id.');
+      }
+
+      return {
+        operations: [
+          {
+            kind: 'remove_element',
+            id: payload.id,
+          },
+        ],
+        summary: `Deleted element ${payload.id}.`,
+      };
+    }
+
+    case 'clear_scene':
+      return {
+        operations: [
+          {
+            kind: 'clear_scene',
+          },
+        ],
+        summary: 'Cleared canvas.',
+      };
 
     default:
       throw new Error(`Unsupported MCP operation: ${operation}`);

@@ -15,6 +15,7 @@ Canvas guidance:
   - Provide a \`points\` array for \`arrow\`, \`line\`, and \`freedraw\` shapes. Points are arrays of \[x,y] offsets relative to the element's \`x\`/\`y\` anchor. Close polygons by ending near the starting point.
   - Use \`strokeColor\` for the outline, \`backgroundColor\` for fill, and optionally \`fillStyle\` (\`solid\`, \`hachure\`, or \`cross-hatch\`).
   - Prefer \`update_element\` to adjust position, colors, or size. Reserve \`delete_element\` for explicit removal requests so elements keep their IDs over time.
+  - AWS diagrams returned from external tools are placed as single image elements. Do not try to recreate them with individual AWS icons—trust the placed snapshot and move/resize it as needed.
 
 Research guidance:
 - When the AWS knowledge tools are available, use them to pull official documentation before answering architecture questions. Start with "aws_knowledge_search" to discover relevant material, "aws_knowledge_read" to quote authoritative guidance, and "aws_knowledge_recommend" to surface related resources.

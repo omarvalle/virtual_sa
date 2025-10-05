@@ -5,6 +5,7 @@ import type {
   CanvasCommandBatch,
   ExcalidrawOperation,
   ExcalidrawElementPayload,
+  ExcalidrawPoint,
 } from '@/lib/canvas/types';
 
 function parseSessionId(url: string): string {
@@ -244,7 +245,16 @@ export async function POST(request: Request) {
             }
             const element = elementRaw as Record<string, unknown>;
             const type = element.type;
-            if (type !== 'rectangle' && type !== 'ellipse' && type !== 'diamond' && type !== 'arrow' && type !== 'text') {
+            if (
+              type !== 'rectangle' &&
+              type !== 'ellipse' &&
+              type !== 'diamond' &&
+              type !== 'arrow' &&
+              type !== 'text' &&
+              type !== 'freedraw' &&
+              type !== 'line' &&
+              type !== 'image'
+            ) {
               warnings.push(
                 `Command ${index} operation ${opIndex} element ${elementIndex} has unsupported type '${String(type)}'.`,
               );
@@ -277,6 +287,44 @@ export async function POST(request: Request) {
                   ? element.arrowhead
                   : null,
             };
+
+            if (Array.isArray(element.points)) {
+              const parsedPoints: ExcalidrawPoint[] = [];
+              (element.points as unknown[]).forEach((point, pointIndex) => {
+                if (!Array.isArray(point) || point.length < 2) {
+                  warnings.push(
+                    `Command ${index} operation ${opIndex} element ${elementIndex} point ${pointIndex} ignored (invalid format).`,
+                  );
+                  return;
+                }
+                const px = Number(point[0]);
+                const py = Number(point[1]);
+                if (Number.isNaN(px) || Number.isNaN(py)) {
+                  warnings.push(
+                    `Command ${index} operation ${opIndex} element ${elementIndex} point ${pointIndex} requires numeric coordinates.`,
+                  );
+                  return;
+                }
+                parsedPoints.push([px, py]);
+              });
+              if (parsedPoints.length > 0) {
+                sanitized.points = parsedPoints;
+              }
+            }
+
+            if (typeof element.fillStyle === 'string') {
+              sanitized.fillStyle = element.fillStyle as ExcalidrawElementPayload['fillStyle'];
+            }
+            if (typeof element.strokeStyle === 'string') {
+              sanitized.strokeStyle = element.strokeStyle as ExcalidrawElementPayload['strokeStyle'];
+            }
+            if (typeof element.opacity === 'number') {
+              sanitized.opacity = element.opacity;
+            }
+            if (typeof element.src === 'string') {
+              sanitized.src = element.src;
+            }
+
             sanitizedElements.push(sanitized);
           });
 

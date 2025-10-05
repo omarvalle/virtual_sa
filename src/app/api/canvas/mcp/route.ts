@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { callExcalidrawMcp } from '@/lib/openai/mcpClient';
+import type { McpOperation } from '@/lib/openai/mcpClient';
 import { isExcalidrawMcpEnabled } from '@/lib/config/env';
 
 export async function POST(request: Request) {
@@ -28,7 +29,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const operation = typeof body.operation === 'string' ? body.operation : undefined;
+  const operation = typeof body.operation === 'string' ? (body.operation as McpOperation) : undefined;
   const payload = (body.payload && typeof body.payload === 'object') ? (body.payload as Record<string, unknown>) : {};
 
   if (!operation) {
@@ -42,8 +43,8 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await callExcalidrawMcp(operation as any, payload);
-    return NextResponse.json({ success: true, result });
+    const result = await callExcalidrawMcp(operation, payload);
+    return NextResponse.json({ success: true, ...result });
   } catch (error) {
     return NextResponse.json(
       {

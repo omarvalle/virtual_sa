@@ -25,12 +25,14 @@ export type ExcalidrawPoint = [number, number];
 
 export type ExcalidrawElementPayload = {
   id?: string;
-  type: 'rectangle' | 'ellipse' | 'diamond' | 'arrow' | 'text' | 'freedraw' | 'line';
+  type: 'rectangle' | 'ellipse' | 'diamond' | 'arrow' | 'text' | 'label' | 'freedraw' | 'line' | 'image';
   x: number;
   y: number;
   width?: number;
   height?: number;
   text?: string;
+  fontSize?: number;
+  fontFamily?: string;
   rotation?: number;
   strokeColor?: string;
   backgroundColor?: string;
@@ -42,6 +44,7 @@ export type ExcalidrawElementPayload = {
   fillStyle?: 'solid' | 'hachure' | 'cross-hatch' | 'zigzag' | 'dots';
   strokeStyle?: 'solid' | 'dashed' | 'dotted';
   opacity?: number;
+  src?: string;
 };
 
 export type ExcalidrawOperation =

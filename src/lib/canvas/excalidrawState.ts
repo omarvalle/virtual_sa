@@ -12,6 +12,8 @@ export type CanvasShape = ExcalidrawElementPayload & {
   strokeStyle?: ExcalidrawElementPayload['strokeStyle'];
   opacity?: number;
   points?: ExcalidrawElementPayload['points'];
+  fontSize?: number;
+  fontFamily?: string;
   isDeleted?: boolean;
 };
 
@@ -37,18 +39,21 @@ function getState(): ExcalidrawState {
 }
 
 function normalizeElement(payload: ExcalidrawElementPayload): CanvasShape {
-  const width = normalizeDimension(payload, 'width');
-  const height = normalizeDimension(payload, 'height');
-  const enforcedPoints = ensurePoints(payload, width, height);
+  const resolvedType = payload.type === 'label' ? 'text' : payload.type;
+  const width = normalizeDimension({ ...payload, type: resolvedType }, 'width');
+  const height = normalizeDimension({ ...payload, type: resolvedType }, 'height');
+  const enforcedPoints = ensurePoints({ ...payload, type: resolvedType }, width, height);
 
   return {
     id: payload.id ?? `shape_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-    type: payload.type,
+    type: resolvedType,
     x: payload.x,
     y: payload.y,
     width,
     height,
     text: payload.text,
+    fontSize: payload.fontSize,
+    fontFamily: payload.fontFamily,
     rotation: payload.rotation ?? 0,
     strokeColor: payload.strokeColor ?? '#22d3ee',
     backgroundColor: payload.backgroundColor ?? 'transparent',
@@ -60,6 +65,7 @@ function normalizeElement(payload: ExcalidrawElementPayload): CanvasShape {
     fillStyle: payload.fillStyle ?? 'solid',
     strokeStyle: payload.strokeStyle ?? 'solid',
     opacity: payload.opacity ?? 100,
+    src: payload.src,
   };
 }
 

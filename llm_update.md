@@ -5,12 +5,13 @@ Welcome aboard! This log captures the current state of the Virtual Solutions Arc
 ## Quick Status
 - Voice agent → OpenAI Realtime pipeline is functioning: WebRTC handshake, audio streaming, transcripts, and function calls all succeed.
 - Mermaid diagrams render reliably in the preview when the agent calls `canvas_update_mermaid`.
-- Excalidraw updates partially work: ad-hoc payloads are normalized and we at least render fallback shapes, but rectangles often land with default (ellipse-like) styling/positions. Fallback logic currently infers shapes from the summary when operations are insufficient.
+- Excalidraw MCP runs in-process by default. Structured operations (`create_elements`, `update_element`, `delete_element`, `clear_scene`) are normalised locally and rendered directly on the canvas preview. Labels now render like text blocks with font size/family support.
 - AWS Knowledge MCP integration is available behind the `AWS_KNOWLEDGE_MCP_ENABLED` flag. When enabled, the agent can search (`aws_knowledge_search`), read (`aws_knowledge_read`), and recommend (`aws_knowledge_recommend`) official guidance.
-- Tavily MCP integration is now wired: if `TAVILY_API_KEY` (or `TAVILY_MCP_LINK`) is present, the voice agent can run real-time search (`tavily_search`), extraction (`tavily_extract`), crawls (`tavily_crawl`), and site maps (`tavily_map`).
-- AWS Diagram MCP is proxied via `POST /api/mcp/aws-diagram`; configure `AWS_DIAGRAM_MCP_URL` and `MCP_SERVICE_API_KEY`/`CANVAS_API_KEY` so the agent can request official diagram renders (`aws_generate_diagram`).
-- Excalidraw MCP server integration is now toggled on for local validation. The agent calls the HTTP wrapper (`/tools/call` on port 3100); the response is normalized into `excalidraw.patch` operations that immediately update the local canvas.
+- Tavily MCP integration is now wired: if `TAVILY_API_KEY` (or `TAVILY_MCP_LINK`) is present, the voice agent can run real-time search (`tavily_search`), extraction (`tavily_extract`), crawls (`tavily_crawl`), and site maps (`tavily_map`). Responses are trimmed (max 3 links + optional summary), defaults enforce light payloads, and the results are injected into the Realtime context (tool result when a `call_id` is present, otherwise as a system memo) so the assistant can quote the URLs it just fetched.
+- AWS Diagram MCP now runs co-located by default. The API route spawns `uvx awslabs.aws-diagram-mcp-server` and converts the result into a base64 PNG for the canvas. Switch to a remote HTTP bridge by setting `AWS_DIAGRAM_MCP_MODE=remote` plus `AWS_DIAGRAM_MCP_URL` if needed.
+- Remote Excalidraw MCP wrappers remain optional—set `EXCALIDRAW_MCP_MODE=remote` if you need to hit an external server. Otherwise, no HTTP bridge is required.
 - Canvas preview now supports dragging shapes with the pointer, including arrow endpoints for quick resizing. User drags emit `update_element` operations so the shared scene stays in sync.
+- Excalidraw MCP calls default to an in-process implementation; remote HTTP mode is still available by setting `EXCALIDRAW_MCP_MODE=remote`.
 
 ## Priority Files to Review
 - `README.md` – stack overview and setup expectations.
@@ -42,8 +43,8 @@ The hosted `aws-knowledge-mcp-server` runs behind `POST /api/mcp/aws-knowledge`,
 3. Capture tool outputs in session state so future turns can reference earlier research without re-querying.
 
 ## Canvas Follow-ups (still open)
-- Improve normalization so rectangles/squares preserve their intended coordinates and shape rather than defaulting to fallback ellipses.
-- Consider lightweight unit tests around `normalizeAdHocOperation` to guard against regressions once AWS MCP features enter the mix.
+- Monitor future tool calls for unexpected element types; the local mapper now accepts rectangles, ellipses, diamonds, arrows, lines, freehand strokes, text, labels, and images.
+- Consider lightweight unit tests around `normalizeAdHocOperation` and the new AWS diagram mapper to guard against regressions once additional MCP features enter the mix.
 
 ## Handy Debug Tips
 - Watch the DevTools console for `[canvas]` logs from `/api/canvas/events` to see how operations are interpreted.

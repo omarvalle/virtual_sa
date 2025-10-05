@@ -56,6 +56,15 @@ export function ExcalidrawPreview({ sessionId }: { sessionId: string }) {
         id: string;
         originalPoints: ExcalidrawPoint[];
       }
+    | {
+        kind: 'resize-corner';
+        id: string;
+        originX: number;
+        originY: number;
+        initialWidth: number;
+        initialHeight: number;
+        aspectRatio: number;
+      }
     | null
   >(null);
   const shapesRef = useRef<CanvasShape[]>([]);
@@ -90,6 +99,24 @@ export function ExcalidrawPreview({ sessionId }: { sessionId: string }) {
   const persistShape = useCallback(
     async (shape: CanvasShape) => {
       try {
+        const props: Record<string, unknown> = {
+          x: shape.x,
+          y: shape.y,
+        };
+
+        if (typeof shape.width === 'number') {
+          props.width = shape.width;
+        }
+        if (typeof shape.height === 'number') {
+          props.height = shape.height;
+        }
+        if (shape.points) {
+          props.points = shape.points;
+        }
+        if (shape.src) {
+          props.src = shape.src;
+        }
+
         await postCanvasCommands({
           sessionId,
           commands: [
@@ -103,13 +130,7 @@ export function ExcalidrawPreview({ sessionId }: { sessionId: string }) {
                   {
                     kind: 'update_element',
                     id: shape.id,
-                    props: {
-                      x: shape.x,
-                      y: shape.y,
-                      width: shape.width,
-                      height: shape.height,
-                      points: shape.points,
-                    },
+                    props,
                   },
                 ],
               },
@@ -226,6 +247,34 @@ export function ExcalidrawPreview({ sessionId }: { sessionId: string }) {
           shapesRef.current = updated;
           return updated;
         });
+        return;
+      }
+
+      if (dragState.kind === 'resize-corner') {
+        setShapes((prev) => {
+          const updated = prev.map((shape) => {
+            if (shape.id !== dragState.id) {
+              return shape;
+            }
+
+            const deltaX = Math.max(1, coords.x - dragState.originX);
+            const deltaY = Math.max(1, coords.y - dragState.originY);
+            let nextWidth = deltaX;
+            let nextHeight = deltaY;
+
+            if (dragState.aspectRatio > 0) {
+              nextHeight = Math.max(1, Math.round(nextWidth / dragState.aspectRatio));
+            }
+
+            return {
+              ...shape,
+              width: nextWidth,
+              height: nextHeight,
+            };
+          });
+          shapesRef.current = updated;
+          return updated;
+        });
       }
     },
     [getSvgCoordinates],
@@ -245,7 +294,7 @@ export function ExcalidrawPreview({ sessionId }: { sessionId: string }) {
         void persistShape(latestShape);
       }
     },
-    [persistShape, shapes],
+    [persistShape],
   );
 
   useEffect(() => {
@@ -275,7 +324,7 @@ export function ExcalidrawPreview({ sessionId }: { sessionId: string }) {
   );
 
   const startHandleDrag = useCallback(
-    (shape: CanvasShape, handle: 'start' | 'end', event: ReactPointerEvent<SVGCircleElement>) => {
+    (shape: CanvasShape, handle: 'start' | 'end' | 'corner', event: ReactPointerEvent<SVGCircleElement>) => {
       event.preventDefault();
       event.stopPropagation();
       const points = shape.points ?? [[shape.width ?? 0, shape.height ?? 0]];
@@ -287,11 +336,24 @@ export function ExcalidrawPreview({ sessionId }: { sessionId: string }) {
           originY: shape.y,
           originalPoints: points.map(([px, py]) => [px, py]) as ExcalidrawPoint[],
         };
-      } else {
+      } else if (handle === 'end') {
         dragStateRef.current = {
           kind: 'resize-end',
           id: shape.id,
           originalPoints: points.map(([px, py]) => [px, py]) as ExcalidrawPoint[],
+        };
+      } else {
+        dragStateRef.current = {
+          kind: 'resize-corner',
+          id: shape.id,
+          originX: shape.x,
+          originY: shape.y,
+          initialWidth: shape.width ?? 1,
+          initialHeight: shape.height ?? 1,
+          aspectRatio:
+            shape.type === 'image' && shape.width && shape.height && shape.height !== 0
+              ? (shape.width as number) / (shape.height as number)
+              : 0,
         };
       }
       setActiveShapeId(shape.id);
@@ -402,17 +464,45 @@ export function ExcalidrawPreview({ sessionId }: { sessionId: string }) {
           const abs = toAbsolutePoints(points);
           return <polyline key={id} points={abs} fill="none" {...commonProps} strokeLinecap="round" />;
         }
-        case 'text':
+        case 'image':
+          if (!shape.src) {
+            return null;
+          }
           return (
-            <text key={id} x={x} y={y + height} fill={strokeColor} fontSize={height} transform={transform}>
+            <image
+              key={id}
+              href={shape.src}
+              x={x}
+              y={y}
+              width={Math.max(1, width)}
+              height={Math.max(1, height)}
+              preserveAspectRatio="xMidYMid meet"
+              transform={transform}
+            />
+          );
+        case 'text':
+        case 'label': {
+          const fontSize = shape.fontSize ?? height;
+          const fontFamily = shape.fontFamily ?? 'inherit';
+          return (
+            <text
+              key={id}
+              x={x}
+              y={y + fontSize}
+              fill={strokeColor}
+              fontSize={fontSize}
+              fontFamily={fontFamily}
+              transform={transform}
+            >
               {text ?? ''}
             </text>
           );
+        }
         default:
           return null;
       }
     },
-    [activeShapeId],
+    [activeShapeId, startHandleDrag],
   );
 
   return (
@@ -489,6 +579,17 @@ export function ExcalidrawPreview({ sessionId }: { sessionId: string }) {
                 stroke="#38bdf8"
                 strokeDasharray="6 4"
                 pointerEvents="none"
+              />
+            ) : null}
+            {shape.type === 'image' ? (
+              <circle
+                cx={(shape.x ?? 0) + Math.max(8, shape.width ?? 0)}
+                cy={(shape.y ?? 0) + Math.max(8, shape.height ?? 0)}
+                r={8}
+                fill="#1e293b"
+                stroke="#38bdf8"
+                strokeWidth={2}
+                onPointerDown={(event) => startHandleDrag(shape, 'corner', event)}
               />
             ) : null}
           </g>

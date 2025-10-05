@@ -42,6 +42,28 @@ export function VoiceEventLog({
   transcripts: TranscriptLine[];
   events: VoiceDebugEvent[];
 }) {
+  const renderEventLabel = (event: VoiceDebugEvent) => {
+    const isImage = event.type.endsWith('.image') || event.label.startsWith('data:image');
+    if (isImage) {
+      return (
+        <img
+          src={event.label}
+          alt="Generated diagram"
+          style={{ maxWidth: '100%', borderRadius: '0.5rem', marginTop: '0.5rem', border: '1px solid #1e293b' }}
+        />
+      );
+    }
+
+    try {
+      const parsed = JSON.parse(event.label);
+      return (
+        <pre style={{ margin: 0 }}>{JSON.stringify(parsed, null, 2)}</pre>
+      );
+    } catch (error) {
+      return <div>{event.label}</div>;
+    }
+  };
+
   return (
     <article style={containerStyle}>
       <section>
@@ -82,7 +104,7 @@ export function VoiceEventLog({
                 <span style={{ color: '#94a3b8', marginLeft: '0.5rem' }}>
                   {new Date(event.timestamp).toLocaleTimeString()}
                 </span>
-                <div>{event.label}</div>
+                {renderEventLabel(event)}
               </div>
             ))}
           </div>
