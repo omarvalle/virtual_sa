@@ -15,7 +15,17 @@ type CallToolResult = {
   raw: unknown;
 };
 
-const ELEMENT_TYPES = new Set(['rectangle', 'ellipse', 'diamond', 'arrow', 'text', 'label', 'freedraw', 'line']);
+const ELEMENT_TYPES = new Set([
+  'rectangle',
+  'ellipse',
+  'diamond',
+  'arrow',
+  'text',
+  'label',
+  'freedraw',
+  'line',
+  'image',
+]);
 
 const RANDOM_PREFIX = 'shape_';
 
@@ -103,6 +113,15 @@ function normalizeElement(raw: any): ExcalidrawElementPayload | null {
       element.arrowhead = arrowhead;
     }
   }
+  if (typeof raw.src === 'string') {
+    element.src = raw.src;
+  }
+  if (typeof raw.fileId === 'string') {
+    element.fileId = raw.fileId;
+  }
+  if (typeof raw.status === 'string' && (raw.status === 'pending' || raw.status === 'saved')) {
+    element.status = raw.status;
+  }
 
   return element;
 }
@@ -149,6 +168,8 @@ function prepareElementInput(value: unknown, index: number): {
   if (typeof record.fillStyle === 'string') remote.fillStyle = record.fillStyle;
   if (typeof record.strokeStyle === 'string') remote.strokeStyle = record.strokeStyle;
   if (typeof record.src === 'string') remote.src = record.src;
+  if (typeof record.fileId === 'string') remote.fileId = record.fileId;
+  if (typeof record.status === 'string') remote.status = record.status;
 
   const text = typeof record.text === 'string'
     ? record.text
@@ -186,7 +207,18 @@ function prepareElementInput(value: unknown, index: number): {
     fallback.fontFamily = String(record.fontFamily);
   }
   if (typeof record.src === 'string') fallback.src = record.src;
+  if (typeof record.fileId === 'string') fallback.fileId = record.fileId;
+  if (typeof record.status === 'string') {
+    const status = record.status as ExcalidrawElementPayload['status'];
+    if (status === 'pending' || status === 'saved') {
+      fallback.status = status;
+    }
+  }
   if (text) fallback.text = text;
+
+  if (!fallback.fileId) {
+    fallback.fileId = fallback.id;
+  }
 
   return { remote, fallback };
 }
@@ -355,6 +387,23 @@ function propsFromSanitizedUpdate(payload: Record<string, unknown>): Partial<Exc
     if (key === 'points' && Array.isArray(value)) {
       props.points = value as ExcalidrawPoint[];
       return;
+    }
+
+    if (key === 'src' && typeof value === 'string') {
+      props.src = value;
+      return;
+    }
+
+    if (key === 'fileId' && typeof value === 'string') {
+      props.fileId = value;
+      return;
+    }
+
+    if (key === 'status' && typeof value === 'string') {
+      const status = value as ExcalidrawElementPayload['status'];
+      if (status === 'pending' || status === 'saved') {
+        props.status = status;
+      }
     }
   });
 

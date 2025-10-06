@@ -428,6 +428,8 @@ export function VoiceSessionPanel() {
           try {
             const rawDimensions = await loadImageDimensions(baseImage).catch(() => ({ width: 640, height: 480 }));
             const { width, height } = constrainDimensions(rawDimensions);
+            const diagramId = `diagram_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+            const fileId = `${diagramId}_file`;
 
             const addCommand = {
               id: randomId(),
@@ -440,12 +442,13 @@ export function VoiceSessionPanel() {
                     kind: 'add_elements',
                     elements: [
                       {
-                        id: `diagram_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                        id: diagramId,
                         type: 'image',
                         x: 80,
                         y: 80,
                         width,
                         height,
+                        fileId,
                         src: baseImage,
                         strokeColor: '#0ea5e9',
                         backgroundColor: 'transparent',
@@ -820,12 +823,7 @@ export function VoiceSessionPanel() {
 
         {error ? (
           <p style={{ color: '#f97316', marginBottom: '1rem' }}>{error}</p>
-        ) : (
-          <p style={{ marginBottom: '1rem' }}>
-            WebRTC capture and OpenAI session negotiation are in progress. Once the backend token service
-            is fully authorized, this panel will stream live audio and agent actions.
-          </p>
-        )}
+        ) : null}
 
         <button
           type="button"

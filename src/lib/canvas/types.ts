@@ -45,6 +45,8 @@ export type ExcalidrawElementPayload = {
   strokeStyle?: 'solid' | 'dashed' | 'dotted';
   opacity?: number;
   src?: string;
+  fileId?: string;
+  status?: 'pending' | 'saved';
 };
 
 export type ExcalidrawOperation =

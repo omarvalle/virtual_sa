@@ -3,12 +3,20 @@
 Welcome aboard! This log captures the current state of the Virtual Solutions Architect project and the next items in flight. Use it to ramp quickly and avoid duplicating work.
 
 ## Quick Status
-- Voice agent → OpenAI Realtime pipeline is functioning: WebRTC handshake, audio streaming, transcripts, and function calls all succeed.
+- Voice agent → OpenAI Realtime pipeline is functioning: WebRTC handshake, audio streaming, transcripts, and function calls all succeed. Memory persistence is in progress—session summaries are supposed to be written at hang-up, but we still need to confirm they survive across restarts.
 - Mermaid diagrams render reliably in the preview when the agent calls `canvas_update_mermaid`.
 - Excalidraw MCP runs in-process by default. Structured operations (`create_elements`, `update_element`, `delete_element`, `clear_scene`) are normalised locally and rendered directly on the canvas preview. Labels now render like text blocks with font size/family support.
 - AWS Knowledge MCP integration is available behind the `AWS_KNOWLEDGE_MCP_ENABLED` flag. When enabled, the agent can search (`aws_knowledge_search`), read (`aws_knowledge_read`), and recommend (`aws_knowledge_recommend`) official guidance.
 - Tavily MCP integration is now wired: if `TAVILY_API_KEY` (or `TAVILY_MCP_LINK`) is present, the voice agent can run real-time search (`tavily_search`), extraction (`tavily_extract`), crawls (`tavily_crawl`), and site maps (`tavily_map`). Responses are trimmed (max 3 links + optional summary), defaults enforce light payloads, and the results are injected into the Realtime context (tool result when a `call_id` is present, otherwise as a system memo) so the assistant can quote the URLs it just fetched.
-- Long-lived conversations now flow through a SQLite-backed memory layer: session context is fetched before each call, summaries/TODOs are persisted at the end, and (when the `sqlite-vec` extension is available) highlights are embedded for cosine retrieval on the next visit.
+- Long-lived conversations now flow through a SQLite-backed memory layer: session context is fetched before each call, summaries/TODOs are persisted at the end, and (when the `sqlite-vec` extension is available) highlights are embedded for cosine retrieval on the next visit. As of 2025‑10‑05 we still see `hasSummary: false`, so double-check the summarizer pipeline.
+
+### Files for investigation (memory regression)
+- `src/components/voice/VoiceSessionPanel.tsx`: emits `memory.summary` / `memory.error` events and calls `/api/conversation/summarize` on hang-up.
+- `src/app/api/conversation/summarize/route.ts`: server entry point that writes summaries via `processConversationTranscript`.
+- `src/lib/conversation/processor.ts`: calls OpenAI (fallback to local summary), then persists state + memory rows.
+- `src/lib/memory/vectorStore.ts`: handles SQLite inserts, embeddings, vector fallback.
+- `src/lib/db/sqlite.ts`: migrations, sqlite-vec load, metadata column guard.
+- `data/app.db`: inspect tables `conversation_state` and `memory_summary` after a call.
 - AWS Diagram MCP now runs co-located by default. The API route spawns `uvx awslabs.aws-diagram-mcp-server` and converts the result into a base64 PNG for the canvas. Switch to a remote HTTP bridge by setting `AWS_DIAGRAM_MCP_MODE=remote` plus `AWS_DIAGRAM_MCP_URL` if needed.
 - Remote Excalidraw MCP wrappers remain optional—set `EXCALIDRAW_MCP_MODE=remote` if you need to hit an external server. Otherwise, no HTTP bridge is required.
 - Canvas preview now supports dragging shapes with the pointer, including arrow endpoints for quick resizing. User drags emit `update_element` operations so the shared scene stays in sync.

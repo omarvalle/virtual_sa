@@ -40,18 +40,24 @@ if (vecEnabled) {
     );
 
     vectorQueryStmt = db.prepare<[string, string, number]>(
-      `SELECT ms.id,
+      `WITH matches AS (
+         SELECT v.id,
+                v.distance
+         FROM memory_summary_vec AS v
+         JOIN memory_summary AS ms ON ms.id = v.id
+         WHERE ms.session_id = ?
+           AND v.embedding MATCH vec_f32(?)
+         LIMIT ?
+       )
+       SELECT ms.id,
               ms.session_id,
               ms.summary,
               ms.created_at,
               ms.metadata,
-              memory_summary_vec.distance AS distance
-       FROM memory_summary_vec
-       JOIN memory_summary AS ms ON ms.id = memory_summary_vec.id
-       WHERE ms.session_id = ?
-         AND memory_summary_vec.embedding MATCH vec_f32(?)
-       ORDER BY memory_summary_vec.distance
-       LIMIT ?`
+              matches.distance
+       FROM matches
+       JOIN memory_summary AS ms ON ms.id = matches.id
+       ORDER BY matches.distance`
     );
   } catch (error) {
     console.warn('[memory] sqlite-vec JSON helpers not available; disabling vector search.', error);

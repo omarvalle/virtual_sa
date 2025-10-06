@@ -286,6 +286,8 @@ export async function POST(request: Request) {
                 element.arrowhead === 'arrow' || element.arrowhead === 'bar' || element.arrowhead === 'circle'
                   ? element.arrowhead
                   : null,
+              fileId: typeof element.fileId === 'string' ? element.fileId : undefined,
+              status: element.status === 'pending' || element.status === 'saved' ? element.status : undefined,
             };
 
             if (Array.isArray(element.points)) {

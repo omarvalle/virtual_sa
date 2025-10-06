@@ -66,6 +66,8 @@ function normalizeElement(payload: ExcalidrawElementPayload): CanvasShape {
     strokeStyle: payload.strokeStyle ?? 'solid',
     opacity: payload.opacity ?? 100,
     src: payload.src,
+    fileId: payload.fileId,
+    status: payload.status,
   };
 }
 
