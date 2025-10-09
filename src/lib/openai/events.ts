@@ -30,6 +30,7 @@ const EXTERNAL_TOOL_NAMES = new Set([
   'tavily_extract',
   'tavily_crawl',
   'tavily_map',
+  'perplexity_search',
   'aws_generate_diagram',
   'aws_list_diagram_icons',
   'aws_get_diagram_examples',

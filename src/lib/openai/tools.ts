@@ -1,4 +1,4 @@
-import { AWS_KNOWLEDGE_TOOLS, TAVILY_TOOLS, VOICE_AGENT_TOOLS } from '@/lib/openai/prompt';
+import { AWS_KNOWLEDGE_TOOLS, PERPLEXITY_TOOLS, TAVILY_TOOLS, VOICE_AGENT_TOOLS } from '@/lib/openai/prompt';
 
 const EXCALIDRAW_MCP_TOOL = {
   type: 'function',
@@ -26,12 +26,14 @@ type ToolDefinition =
   | (typeof VOICE_AGENT_TOOLS)[number]
   | (typeof AWS_KNOWLEDGE_TOOLS)[number]
   | (typeof TAVILY_TOOLS)[number]
+  | (typeof PERPLEXITY_TOOLS)[number]
   | typeof EXCALIDRAW_MCP_TOOL;
 
 export function getVoiceAgentTools(features: {
   includeExcalidrawMcp: boolean;
   includeAwsKnowledge: boolean;
   includeTavily: boolean;
+  includePerplexity: boolean;
 }): ToolDefinition[] {
   const tools: ToolDefinition[] = [...VOICE_AGENT_TOOLS];
 
@@ -41,6 +43,10 @@ export function getVoiceAgentTools(features: {
 
   if (features.includeTavily) {
     tools.push(...TAVILY_TOOLS);
+  }
+
+  if (features.includePerplexity) {
+    tools.push(...PERPLEXITY_TOOLS);
   }
 
   if (features.includeExcalidrawMcp) {

@@ -20,7 +20,7 @@ Canvas guidance:
 Research guidance:
 - When the AWS knowledge tools are available, use them to pull official documentation before answering architecture questions. Start with "aws_knowledge_search" to discover relevant material, "aws_knowledge_read" to quote authoritative guidance, and "aws_knowledge_recommend" to surface related resources.
 - When you need icon names or starter templates for diagrams, call "aws_list_diagram_icons" or "aws_get_diagram_examples" before generating code.
-- When live web intelligence is needed, call the Tavily tools. Use "tavily_search" for fresh results, "tavily_extract" to pull full content from URLs, "tavily_crawl" for deeper multi-page exploration, and "tavily_map" to summarize a site's structure.
+- When live web intelligence is needed, call the Perplexity search tool ("perplexity_search") for fast ranked sources, or the Tavily tools when you need deeper crawls and content extraction. "tavily_search" fetches fresh results, "tavily_extract" pulls page content, "tavily_crawl" explores multiple paths, and "tavily_map" summarizes a site's structure.
 
 Workflow suggestions:
 1. Summarize your understanding and propose the next diagram or action.
@@ -445,6 +445,64 @@ export const TAVILY_TOOLS = [
         },
       },
       required: ['url'],
+      additionalProperties: false,
+    },
+  },
+] as const;
+
+export const PERPLEXITY_TOOLS = [
+  {
+    type: 'function',
+    name: 'perplexity_search',
+    description:
+      'Search the web using Perplexity to retrieve ranked, citation-ready results for current information needs.',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: {
+          description: 'Primary query string, or an array of related queries for multi-search.',
+          oneOf: [
+            {
+              type: 'string',
+            },
+            {
+              type: 'array',
+              minItems: 1,
+              items: {
+                type: 'string',
+              },
+            },
+          ],
+        },
+        max_results: {
+          type: 'integer',
+          minimum: 1,
+          maximum: 10,
+          description: 'Optional cap on returned results (default 5).',
+        },
+        country: {
+          type: ['string', 'null'],
+          description: 'Optional ISO 3166-1 alpha-2 country code to bias results.',
+        },
+        search_mode: {
+          type: ['string', 'null'],
+          enum: ['web', 'academic', 'sec', null],
+          description: 'Restrict the result set to a specific mode when the user asks for it.',
+        },
+        max_tokens_per_page: {
+          type: 'integer',
+          minimum: 128,
+          maximum: 2048,
+          description: 'Control how much content is extracted per result for richer summaries.',
+        },
+        max_tokens: {
+          type: 'integer',
+          minimum: 256,
+          maximum: 4096,
+          description: 'Override the total extraction budget when the user needs more detail.',
+        },
+      },
+      required: ['query'],
       additionalProperties: false,
     },
   },

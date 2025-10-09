@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { isTavilyMcpEnabled } from '@/lib/config/env';
+import { isTavilyApiEnabled } from '@/lib/config/env';
 import { callTavilyMcp, type TavilyRequest, type TavilyToolName } from '@/lib/mcp/tavily';
 
 type IncomingPayload = {
@@ -125,11 +125,11 @@ function parseRequest(payload: IncomingPayload): TavilyRequest {
 }
 
 export async function POST(request: Request) {
-  if (!isTavilyMcpEnabled()) {
+  if (!isTavilyApiEnabled()) {
     return NextResponse.json(
       {
         success: false,
-        message: 'Tavily MCP integration is not enabled. Provide TAVILY_API_KEY or TAVILY_MCP_LINK to enable it.',
+        message: 'Tavily integration is not enabled. Provide TAVILY_API_KEY to enable it.',
       },
       { status: 400 },
     );
@@ -166,7 +166,11 @@ export async function POST(request: Request) {
 
   try {
     const result = await callTavilyMcp(tavilyRequest);
-    return NextResponse.json({ success: result.success, result });
+    return NextResponse.json({
+      success: result.success,
+      result,
+      segments: result.segments,
+    });
   } catch (error) {
     return NextResponse.json(
       {

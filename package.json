@@ -12,6 +12,7 @@
   "dependencies": {
     "@excalidraw/excalidraw": "^0.18.0",
     "@openai/agents": "^0.1.4",
+    "@perplexity-ai/perplexity_ai": "^0.8.0",
     "better-sqlite3": "^9.4.3",
     "mermaid": "^10.9.1",
     "next": "14.2.3",

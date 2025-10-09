@@ -1,43 +1,6 @@
-import { getTavilyMcpUrl } from '@/lib/config/env';
+import { getTavilyApiBaseUrl, getTavilyApiKey } from '@/lib/config/env';
 
 export type TavilyToolName = 'tavily_search' | 'tavily_extract' | 'tavily_crawl' | 'tavily_map';
-
-type JsonRpcRequest = {
-  jsonrpc: '2.0';
-  id: string;
-  method: string;
-  params: {
-    name: TavilyToolName;
-    arguments: Record<string, unknown>;
-  };
-};
-
-type JsonRpcSuccess<T> = {
-  jsonrpc: '2.0';
-  id?: string;
-  result: T;
-};
-
-type JsonRpcError = {
-  jsonrpc: '2.0';
-  id?: string;
-  error: {
-    code?: number;
-    message?: string;
-    data?: unknown;
-  };
-};
-
-type TavilyToolContent = {
-  type: string;
-  text?: string;
-  [key: string]: unknown;
-};
-
-type TavilyToolCallResult = {
-  content?: TavilyToolContent[];
-  isError?: boolean;
-};
 
 export type TavilyRequest = {
   name: TavilyToolName;
@@ -48,7 +11,7 @@ export type TavilySegment = {
   type: string;
   text?: string;
   parsed?: unknown;
-  raw: TavilyToolContent;
+  raw: unknown;
 };
 
 export type TavilyResponse = {
@@ -59,144 +22,202 @@ export type TavilyResponse = {
   raw: unknown;
 };
 
-function sanitizeRequestArgs(name: TavilyToolName, args: Record<string, unknown>): Record<string, unknown> {
+type RequestConfig = {
+  endpoint: string;
+};
+
+const TAVILY_ENDPOINTS: Record<TavilyToolName, RequestConfig> = {
+  tavily_search: { endpoint: '/search' },
+  tavily_extract: { endpoint: '/extract' },
+  tavily_crawl: { endpoint: '/crawl' },
+  tavily_map: { endpoint: '/map' },
+};
+
+function normalizeArray(value: unknown): string[] | undefined {
+  if (!value) return undefined;
+  if (Array.isArray(value)) {
+    return value.filter((entry) => typeof entry === 'string' && entry.trim().length > 0) as string[];
+  }
+  if (typeof value === 'string') {
+    return value
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+  }
+  return undefined;
+}
+
+function coerceNumber(value: unknown): number | undefined {
+  if (typeof value === 'number') return value;
+  if (typeof value === 'string') {
+    const parsed = Number.parseFloat(value);
+    if (!Number.isNaN(parsed)) return parsed;
+  }
+  return undefined;
+}
+
+function coerceBoolean(value: unknown): boolean | undefined {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    const lowered = value.toLowerCase();
+    if (lowered === 'true') return true;
+    if (lowered === 'false') return false;
+  }
+  return undefined;
+}
+
+function sanitizeArguments(name: TavilyToolName, args: Record<string, unknown>): Record<string, unknown> {
   const sanitized: Record<string, unknown> = { ...args };
 
   if (name === 'tavily_search') {
-    if (typeof sanitized.max_results === 'string') {
-      const parsed = Number.parseInt(sanitized.max_results, 10);
-      if (!Number.isNaN(parsed)) sanitized.max_results = parsed;
-    }
-    if (typeof sanitized.days === 'string') {
-      const parsed = Number.parseInt(sanitized.days, 10);
-      if (!Number.isNaN(parsed)) sanitized.days = parsed;
-    }
-    if (sanitized.include_domains && typeof sanitized.include_domains === 'string') {
-      sanitized.include_domains = sanitized.include_domains
-        .split(',')
-        .map((value) => value.trim())
-        .filter(Boolean);
-    }
-    if (sanitized.exclude_domains && typeof sanitized.exclude_domains === 'string') {
-      sanitized.exclude_domains = sanitized.exclude_domains
-        .split(',')
-        .map((value) => value.trim())
-        .filter(Boolean);
-    }
+    const includeDomains = normalizeArray(sanitized.include_domains);
+    if (includeDomains) sanitized.include_domains = includeDomains;
+    const excludeDomains = normalizeArray(sanitized.exclude_domains);
+    if (excludeDomains) sanitized.exclude_domains = excludeDomains;
+
+    ['max_results', 'days'].forEach((field) => {
+      const value = coerceNumber(sanitized[field]);
+      if (value !== undefined) sanitized[field] = value;
+    });
+
+    [
+      'include_images',
+      'include_image_descriptions',
+      'include_raw_content',
+      'include_favicon',
+    ].forEach((field) => {
+      const value = coerceBoolean(sanitized[field]);
+      if (value !== undefined) sanitized[field] = value;
+    });
   }
 
   if (name === 'tavily_extract') {
-    if (typeof sanitized.urls === 'string') {
-      sanitized.urls = sanitized.urls
-        .split(',')
-        .map((value) => value.trim())
-        .filter(Boolean);
-    }
+    const urls = normalizeArray(sanitized.urls);
+    if (urls) sanitized.urls = urls;
+
+    ['include_images', 'include_favicon'].forEach((field) => {
+      const value = coerceBoolean(sanitized[field]);
+      if (value !== undefined) sanitized[field] = value;
+    });
   }
 
   if (name === 'tavily_crawl' || name === 'tavily_map') {
-    ['max_depth', 'max_breadth', 'limit'].forEach((key) => {
-      if (typeof sanitized[key] === 'string') {
-        const parsed = Number.parseInt(sanitized[key] as string, 10);
-        if (!Number.isNaN(parsed)) sanitized[key] = parsed;
-      }
+    ['max_depth', 'max_breadth', 'limit'].forEach((field) => {
+      const value = coerceNumber(sanitized[field]);
+      if (value !== undefined) sanitized[field] = value;
     });
 
-    ['select_paths', 'select_domains', 'exclude_paths', 'exclude_domains'].forEach((key) => {
-      if (typeof sanitized[key] === 'string') {
-        sanitized[key] = (sanitized[key] as string)
-          .split(',')
-          .map((value) => value.trim())
-          .filter(Boolean);
-      }
+    ['select_paths', 'select_domains', 'exclude_paths', 'exclude_domains'].forEach((field) => {
+      const arr = normalizeArray(sanitized[field]);
+      if (arr) sanitized[field] = arr;
     });
+
+    const allowExternal = coerceBoolean(sanitized.allow_external);
+    if (allowExternal !== undefined) sanitized.allow_external = allowExternal;
   }
 
   return sanitized;
 }
 
-function parseSsePayload(body: string): unknown {
-  const dataLines = body
-    .split(/\r?\n/)
-    .filter((line) => line.startsWith('data: '))
-    .map((line) => line.slice(6).trim())
-    .filter(Boolean);
+function buildSummarySegments(tool: TavilyToolName, payload: unknown): TavilySegment[] {
+  const segments: TavilySegment[] = [];
 
-  if (dataLines.length === 0) {
-    throw new Error('Unexpected Tavily MCP response: missing data payload.');
+  if (tool === 'tavily_search' && payload && typeof payload === 'object') {
+    const { answer, results } = payload as {
+      answer?: string;
+      results?: Array<{ title?: string; url?: string; content?: string; snippet?: string }>;
+    };
+
+    const summaryLines: string[] = [];
+    if (typeof answer === 'string' && answer.trim().length > 0) {
+      summaryLines.push(`Answer: ${answer.trim()}`);
+    }
+
+    if (Array.isArray(results) && results.length > 0) {
+      summaryLines.push('Top results:');
+      results.slice(0, 5).forEach((result) => {
+        const title = result.title ?? result.url ?? 'Result';
+        const url = result.url ? ` (${result.url})` : '';
+        const snippet = result.snippet ?? result.content ?? '';
+        const snippetText = snippet.length > 280 ? `${snippet.slice(0, 277)}...` : snippet;
+        summaryLines.push(`- ${title}${url}${snippetText ? `\n  ${snippetText}` : ''}`);
+      });
+    }
+
+    if (summaryLines.length > 0) {
+      const summary = summaryLines.join('\n');
+      segments.push({
+        type: 'text',
+        text: summary,
+        raw: { type: 'text', text: summary },
+      });
+    }
   }
 
-  const lastPayload = dataLines[dataLines.length - 1];
-  return JSON.parse(lastPayload);
+  segments.push({
+    type: 'json',
+    text: JSON.stringify(payload, null, 2),
+    parsed: payload,
+    raw: payload,
+  });
+
+  return segments;
 }
 
-function safeParseJson(value?: string): unknown | undefined {
-  if (!value) return undefined;
-  try {
-    return JSON.parse(value);
-  } catch (error) {
-    return undefined;
+function extractErrorMessage(responseBody: unknown): string | undefined {
+  if (!responseBody || typeof responseBody !== 'object') return undefined;
+  const candidate = (responseBody as { message?: unknown; error?: unknown }).message;
+  if (typeof candidate === 'string') return candidate;
+  const fallback = (responseBody as { error?: { message?: unknown } }).error;
+  if (fallback && typeof fallback === 'object' && typeof fallback.message === 'string') {
+    return fallback.message;
   }
+  return undefined;
 }
 
 export async function callTavilyMcp(
   request: TavilyRequest,
   options: { signal?: AbortSignal } = {},
 ): Promise<TavilyResponse> {
-  const url = getTavilyMcpUrl();
-  const payload: JsonRpcRequest = {
-    jsonrpc: '2.0',
-    id: `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-    method: 'tools/call',
-    params: {
-      name: request.name,
-      arguments: sanitizeRequestArgs(request.name, request.arguments),
-    },
-  };
+  const config = TAVILY_ENDPOINTS[request.name];
+  if (!config) {
+    throw new Error(`Unsupported Tavily tool: ${request.name}`);
+  }
+
+  const apiKey = getTavilyApiKey();
+  const baseUrl = getTavilyApiBaseUrl().replace(/\/$/, '');
+  const url = `${baseUrl}${config.endpoint}`;
+
+  const sanitizedArgs = sanitizeArguments(request.name, request.arguments ?? {});
 
   const response = await fetch(url, {
     method: 'POST',
     headers: {
-      Accept: 'application/json, text/event-stream',
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({
+      api_key: apiKey,
+      ...sanitizedArgs,
+    }),
     signal: options.signal,
   });
 
-  const bodyText = await response.text();
+  let bodyJson: unknown;
+  try {
+    bodyJson = await response.json();
+  } catch (error) {
+    bodyJson = undefined;
+  }
 
   if (!response.ok) {
-    throw new Error(`Tavily MCP request failed: ${response.status} ${response.statusText} ${bodyText}`);
+    const message = extractErrorMessage(bodyJson) ?? `Tavily API request failed with status ${response.status}.`;
+    throw new Error(message);
   }
-
-  const parsed = parseSsePayload(bodyText) as JsonRpcSuccess<TavilyToolCallResult> | JsonRpcError;
-
-  if ('error' in parsed) {
-    throw new Error(parsed.error?.message ?? 'Tavily MCP request failed.');
-  }
-
-  const result = parsed.result ?? {};
-  const segments: TavilySegment[] = Array.isArray(result.content)
-    ? result.content.map((segment) => ({
-        type: segment.type,
-        text: typeof segment.text === 'string' ? segment.text : undefined,
-        parsed: safeParseJson(typeof segment.text === 'string' ? segment.text : undefined),
-        raw: segment,
-      }))
-    : [];
-
-  const isError = Boolean(result.isError);
-  const errorText =
-    isError && segments.length > 0 && typeof segments[0].text === 'string'
-      ? segments[0].text
-      : undefined;
 
   return {
     tool: request.name,
-    success: !isError,
-    segments,
-    error: isError ? errorText ?? 'Tavily MCP reported an error.' : undefined,
-    raw: parsed,
+    success: true,
+    segments: buildSummarySegments(request.name, bodyJson),
+    raw: bodyJson,
   };
 }

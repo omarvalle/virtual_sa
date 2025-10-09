@@ -115,7 +115,11 @@ export async function POST(request: Request) {
 
   try {
     const result = await callAwsKnowledge(awsRequest);
-    return NextResponse.json({ success: result.success, result });
+    return NextResponse.json({
+      success: result.success,
+      result,
+      segments: result.segments,
+    });
   } catch (error) {
     return NextResponse.json(
       {

@@ -84,28 +84,28 @@ export function getAwsKnowledgeMcpUrl(): string {
   return getOptionalEnv('AWS_KNOWLEDGE_MCP_URL') ?? 'https://knowledge-mcp.global.api.aws';
 }
 
-export function isTavilyMcpEnabled(): boolean {
-  const link = getOptionalEnv('TAVILY_MCP_LINK');
-  const key = getOptionalEnv('TAVILY_API_KEY');
-  return Boolean(link && link.trim().length > 0) || Boolean(key && key.trim().length > 0);
+export function isTavilyApiEnabled(): boolean {
+  return Boolean(getOptionalEnv('TAVILY_API_KEY'));
 }
 
-export function getTavilyMcpUrl(): string {
-  const rawLink = getOptionalEnv('TAVILY_MCP_LINK')?.trim();
-  const key = getOptionalEnv('TAVILY_API_KEY')?.trim();
+export function getTavilyApiKey(): string {
+  return getEnv('TAVILY_API_KEY');
+}
 
-  if (rawLink && rawLink.includes('tavilyApiKey=')) {
-    return rawLink;
-  }
+export function getTavilyApiBaseUrl(): string {
+  return getOptionalEnv('TAVILY_API_BASE_URL') ?? 'https://api.tavily.com';
+}
 
-  const base = rawLink && rawLink.length > 0 ? rawLink : 'https://mcp.tavily.com/mcp/';
+export function isPerplexityApiEnabled(): boolean {
+  return Boolean(getOptionalEnv('PERPLEXITY_API_KEY'));
+}
 
-  if (!key || key.length === 0) {
-    throw new Error('TAVILY_API_KEY must be set when TAVILY_MCP_LINK does not include a tavilyApiKey query parameter.');
-  }
+export function getPerplexityApiKey(): string {
+  return getEnv('PERPLEXITY_API_KEY');
+}
 
-  const separator = base.includes('?') ? '&' : '?';
-  return `${base}${separator}tavilyApiKey=${encodeURIComponent(key)}`;
+export function getPerplexityApiBaseUrl(): string {
+  return getOptionalEnv('PERPLEXITY_API_BASE_URL') ?? 'https://api.perplexity.ai';
 }
 
 export function isAwsDiagramMcpEnabled(): boolean {

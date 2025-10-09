@@ -58,6 +58,42 @@ function constrainDimensions(
   return { width: scaledWidth, height: scaledHeight };
 }
 
+type ToolSegment = {
+  type?: string | null;
+  text?: string | null;
+};
+
+function coerceRecord(value: unknown): Record<string, unknown> | null {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return null;
+}
+
+function extractSegmentTexts(source: unknown, limit = 3): string[] {
+  if (!Array.isArray(source)) {
+    return [];
+  }
+
+  const texts: string[] = [];
+  for (const entry of source as ToolSegment[]) {
+    const type = typeof entry?.type === 'string' ? entry.type.trim().toLowerCase() : '';
+    if (type === 'json') {
+      continue;
+    }
+    const text = typeof entry?.text === 'string' ? entry.text.trim() : '';
+    if (!text) {
+      continue;
+    }
+    texts.push(text);
+    if (texts.length >= limit) {
+      break;
+    }
+  }
+
+  return texts;
+}
+
 type TranscriptBuffer = {
   role: TranscriptLine['speaker'];
   text: string;
@@ -73,6 +109,7 @@ export function VoiceSessionPanel() {
   const [transcripts, setTranscripts] = useState<TranscriptLine[]>([]);
   const [events, setEvents] = useState<VoiceDebugEvent[]>([]);
   const contextInstructionsRef = useRef<string | null>(null);
+  const controlChannelRef = useRef<RTCDataChannel | null>(null);
 
   const statusLabel = useMemo(() => {
     switch (status) {
@@ -202,12 +239,35 @@ export function VoiceSessionPanel() {
 
   const sendToolEnvelope = useCallback(
     (payload: Record<string, unknown>) => {
-      if (!sessionHandles?.controlChannel) {
+      const channel = controlChannelRef.current;
+      if (!channel) {
+        appendEvent({
+          id: randomId(),
+          type: 'tool.error',
+          label: 'No control channel available for tool payload.',
+          timestamp: Date.now(),
+        });
         return;
       }
 
       try {
-        sessionHandles.controlChannel.send(JSON.stringify(payload));
+        const serialized = JSON.stringify(payload);
+        if (channel.readyState !== 'open') {
+          appendEvent({
+            id: randomId(),
+            type: 'tool.warning',
+            label: `Control channel not open (state: ${channel.readyState}). Payload dropped.`,
+            timestamp: Date.now(),
+          });
+          return;
+        }
+        channel.send(serialized);
+        appendEvent({
+          id: randomId(),
+          type: 'websocket.sent',
+          label: serialized,
+          timestamp: Date.now(),
+        });
       } catch (sendError) {
         appendEvent({
           id: randomId(),
@@ -220,12 +280,12 @@ export function VoiceSessionPanel() {
         });
       }
     },
-    [appendEvent, sessionHandles?.controlChannel],
+    [appendEvent],
   );
 
   const sendToolResult = useCallback(
     (
-      responseId: string,
+      _responseId: string,
       callId: string | undefined,
       content: string,
       options: { isError?: boolean } = {},
@@ -249,24 +309,41 @@ export function VoiceSessionPanel() {
         return;
       }
 
+      appendEvent({
+        id: randomId(),
+        type: 'tool.output',
+        label: JSON.stringify({
+          callId,
+          output: trimmed,
+          isError: Boolean(options.isError),
+        }, null, 2),
+        timestamp: Date.now(),
+      });
+
+      sendToolEnvelope({
+        type: 'conversation.item.create',
+        item: {
+          type: 'function_call_output',
+          call_id: callId,
+          output: trimmed,
+        },
+      });
+    },
+    [appendEvent, sendToolEnvelope],
+  );
+
+  const resumeAfterTool = useCallback(
+    (toolName: string, context?: string) => {
       sendToolEnvelope({
         type: 'response.create',
         response: {
-          id: responseId,
-          status: 'completed' as const,
-          output: [
-            {
-              type: 'tool_result' as const,
-              tool_call_id: callId,
-              content: [
-                {
-                  type: 'text' as const,
-                  text: trimmed,
-                },
-              ],
-              ...(options.isError ? { is_error: true as const } : {}),
+          modalities: ['text', 'audio'],
+          instructions: context
+            ? `You just received new information from the tool ${toolName}: ${context}\nUse it to continue the task without waiting for the user unless clarification is needed.`
+            : 'Continue assisting the user using the latest tool results. Only pause if you need clarification.',
+          metadata: {
+            resumed_after_tool: toolName,
             },
-          ],
         },
       });
     },
@@ -289,9 +366,11 @@ export function VoiceSessionPanel() {
         ? 'knowledge'
         : name.startsWith('tavily_')
           ? 'tavily'
-          : name.startsWith('aws_')
-            ? 'aws-diagram'
-            : 'tool';
+          : name.startsWith('perplexity_')
+            ? 'perplexity'
+            : name.startsWith('aws_')
+              ? 'aws-diagram'
+              : 'tool';
 
       if (!callId) {
         appendEvent({
@@ -306,11 +385,24 @@ export function VoiceSessionPanel() {
         ? '/api/mcp/aws-knowledge'
         : namespace === 'tavily'
           ? '/api/mcp/tavily'
+          : namespace === 'perplexity'
+            ? '/api/mcp/perplexity'
           : namespace === 'aws-diagram'
             ? '/api/mcp/aws-diagram'
             : '/api/mcp/tavily';
 
       const adjustedArguments = (() => {
+        if (namespace === 'perplexity') {
+          const clone = { ...toolArgs } as Record<string, unknown>;
+          if (!('max_results' in clone)) {
+            clone.max_results = 5;
+          }
+          if (!('max_tokens_per_page' in clone)) {
+            clone.max_tokens_per_page = 1024;
+          }
+          return clone;
+        }
+
         if (namespace !== 'tavily') {
           return toolArgs;
         }
@@ -364,41 +456,82 @@ export function VoiceSessionPanel() {
         });
 
         const summarise = () => {
-          if (namespace === 'tavily') {
-            const results = (body?.result?.results ?? body?.results ?? []) as Array<{
-              title?: string;
-              url?: string;
-              content?: string;
-              published?: string;
-            }>;
-            if (Array.isArray(results) && results.length > 0) {
+          if (namespace === 'tavily' || namespace === 'perplexity') {
+            const resultRecord = coerceRecord(body?.result);
+            const rawRecord = coerceRecord(resultRecord?.raw) ?? coerceRecord(body?.raw);
+            const payloadResults = resultRecord?.results as unknown;
+            const rawResults = rawRecord?.results as unknown;
+            const results = Array.isArray(payloadResults)
+              ? (payloadResults as Array<Record<string, unknown>>)
+              : Array.isArray(rawResults)
+                ? (rawResults as Array<Record<string, unknown>>)
+                : [];
+            const answerCandidate = resultRecord?.answer ?? rawRecord?.answer;
+            const answer =
+              typeof answerCandidate === 'string' && answerCandidate.trim().length > 0
+                ? answerCandidate.trim()
+                : undefined;
+
+            if (results.length > 0) {
               const lines = results.slice(0, 3).map((item, index) => {
-                const title = item.title ? item.title.trim() : 'Untitled result';
-                const url = item.url ? item.url.trim() : '';
-                const publishedValue = (item as { published?: string; published_date?: string }).published ??
-                  (item as { published?: string; published_date?: string }).published_date;
-                const published = publishedValue ? ` (${publishedValue})` : '';
-                return `${index + 1}. ${title}${published}${url ? ` — ${url}` : ''}`;
+                const record = coerceRecord(item) ?? ({} as Record<string, unknown>);
+                const titleValue = record['title'];
+                const urlValue = record['url'];
+                const publishedValue = record['published'] ?? record['published_date'];
+                const snippetValue = record['snippet'] ?? record['content'];
+                const title =
+                  typeof titleValue === 'string' && titleValue.trim().length > 0
+                    ? titleValue.trim()
+                    : 'Untitled result';
+                const url = typeof urlValue === 'string' ? urlValue.trim() : '';
+                const published =
+                  typeof publishedValue === 'string' && publishedValue.trim().length > 0
+                    ? ` (${publishedValue.trim()})`
+                    : '';
+                const rawSnippet = typeof snippetValue === 'string' ? snippetValue.trim() : '';
+                const snippet = rawSnippet.length > 280 ? `${rawSnippet.slice(0, 277)}...` : rawSnippet;
+                const snippetLine = snippet ? `\n  ${snippet}` : '';
+                return `${index + 1}. ${title}${published}${url ? ` — ${url}` : ''}${snippetLine}`;
               });
 
-              const answer =
-                typeof body?.result?.answer === 'string' && body.result.answer.trim().length > 0
-                  ? `Summary: ${body.result.answer.trim()}`
-                  : undefined;
-
-              return [`Tavily ${name} results:`, ...lines, answer ?? '']
+              const heading = namespace === 'perplexity' ? 'Perplexity search results:' : `Tavily ${name} results:`;
+              return [heading, ...lines, answer ? `Summary: ${answer}` : '']
                 .filter(Boolean)
                 .join('\n');
+            }
+
+            const segmentTexts = extractSegmentTexts(
+              body?.segments ?? resultRecord?.segments ?? rawRecord?.segments,
+            );
+            const segmentSummaryParts = [...segmentTexts];
+            if (answer) {
+              segmentSummaryParts.push(`Summary: ${answer}`);
+            }
+            if (segmentSummaryParts.length > 0) {
+              const heading = namespace === 'perplexity'
+                ? 'Perplexity search results:'
+                : `Tavily ${name} results:`;
+              return [heading, ...segmentSummaryParts]
+                .filter(Boolean)
+                .join('\n\n');
+            }
+
+            if (answer) {
+              const prefix = namespace === 'perplexity' ? 'Perplexity summary:' : `Tavily ${name} summary:`;
+              return `${prefix} ${answer}`;
             }
           }
 
           if (namespace === 'knowledge') {
-            const segments = (body?.segments ?? body?.result?.content ?? []) as Array<{
-              text?: string;
-            }>;
-            const first = segments.find((segment) => typeof segment?.text === 'string');
-            if (first?.text) {
-              return `AWS Knowledge snippet:\n${first.text.slice(0, 4000)}`;
+            const resultRecord = coerceRecord(body?.result);
+            const rawRecord = coerceRecord(resultRecord?.raw);
+            const rawResult = coerceRecord(rawRecord?.result);
+            const segmentTexts = extractSegmentTexts(
+              body?.segments ?? resultRecord?.segments ?? rawRecord?.segments ?? rawResult?.content,
+            );
+            if (segmentTexts.length > 0) {
+              const trimmed = segmentTexts.map((text) => text.slice(0, 4000));
+              return ['AWS Knowledge snippet:', ...trimmed].join('\n\n');
             }
           }
 
@@ -411,8 +544,31 @@ export function VoiceSessionPanel() {
           return JSON.stringify(body.result ?? body.diagram ?? body, null, 2);
         };
 
+        const summaryTextRaw = summarise();
+        const summaryText = summaryTextRaw ? summaryTextRaw.trim() : '';
+        const resumeContext = summaryText ? summaryText.slice(0, 800) : undefined;
+
         if (responseId) {
-          sendToolResult(responseId, callId, summarise());
+          sendToolResult(responseId, callId, summaryText || 'Tool call completed with no textual summary.');
+        } else if (summaryText) {
+          // If we lack a tool call id, still surface the summary as a conversation item.
+          sendToolEnvelope({
+            type: 'conversation.item.create',
+            item: {
+              type: 'message',
+              role: 'system',
+              content: [
+                {
+                  type: 'input_text',
+                  text: summaryText,
+                },
+              ],
+            },
+          });
+        }
+
+        if (namespace === 'tavily' || namespace === 'knowledge' || namespace === 'perplexity') {
+          resumeAfterTool(name, resumeContext);
         }
 
         if (namespace === 'aws-diagram' && body?.diagram?.imageBase64) {
@@ -500,17 +656,32 @@ export function VoiceSessionPanel() {
           timestamp: Date.now(),
         });
 
+        const errorMessage = (error instanceof Error ? error.message : 'External MCP request failed.').slice(0, 400);
+
         if (responseId) {
-          sendToolResult(
-            responseId,
-            callId,
-            error instanceof Error ? error.message : 'External MCP request failed.',
-            { isError: true },
-          );
+          sendToolResult(responseId, callId, errorMessage, { isError: true });
+        } else {
+          sendToolEnvelope({
+            type: 'conversation.item.create',
+            item: {
+              type: 'message',
+              role: 'system',
+              content: [
+                {
+                  type: 'input_text',
+                  text: errorMessage,
+                },
+              ],
+            },
+          });
+        }
+
+        if (namespace === 'tavily' || namespace === 'knowledge' || namespace === 'perplexity') {
+          resumeAfterTool(name, errorMessage);
         }
       }
     },
-    [appendEvent, sendToolResult],
+    [appendEvent, resumeAfterTool, sendToolEnvelope, sendToolResult],
   );
 
   const finalizeTranscript = useCallback((id: string, source: 'assistant' | 'user') => {
@@ -747,6 +918,7 @@ export function VoiceSessionPanel() {
       await persistSessionSummary(transcripts);
       sessionHandles?.localStream.getTracks().forEach((track) => track.stop());
       sessionHandles?.peerConnection.close();
+      controlChannelRef.current = null;
       setSessionHandles(null);
       responseBuffer.current.clear();
       userBuffer.current.clear();
@@ -797,6 +969,34 @@ export function VoiceSessionPanel() {
         },
       );
 
+      controlChannelRef.current = session.controlChannel;
+      if (controlChannelRef.current) {
+        controlChannelRef.current.addEventListener('open', () => {
+          appendEvent({
+            id: randomId(),
+            type: 'control_channel.open',
+            label: 'Control data channel opened.',
+            timestamp: Date.now(),
+          });
+        });
+        controlChannelRef.current.addEventListener('close', () => {
+          appendEvent({
+            id: randomId(),
+            type: 'control_channel.close',
+            label: 'Control data channel closed.',
+            timestamp: Date.now(),
+          });
+          controlChannelRef.current = null;
+        });
+        controlChannelRef.current.addEventListener('error', (event) => {
+          appendEvent({
+            id: randomId(),
+            type: 'control_channel.error',
+            label: event instanceof Event ? 'Control channel error event fired.' : JSON.stringify(event),
+            timestamp: Date.now(),
+          });
+        });
+      }
       setSessionHandles(session);
       setStatus('active');
     } catch (err) {
@@ -805,6 +1005,7 @@ export function VoiceSessionPanel() {
       setStatus('error');
     }
   }, [
+    appendEvent,
     handleConnectionStateChange,
     handleControlMessage,
     handleRemoteTrack,

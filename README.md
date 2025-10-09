@@ -23,7 +23,7 @@ Voice-first web application that blends OpenAI's realtime agents with AWS Bedroc
    - `OPENAI_REALTIME_MODEL` and optional `OPENAI_REALTIME_VOICE` for preferred persona.
    - `VOICE_TOKEN_ALLOWED_ORIGINS` set to the web origins permitted to request realtime sessions (comma separated).
    - Set `AWS_KNOWLEDGE_MCP_ENABLED=true` to allow the agent to call the hosted AWS Knowledge MCP server. Override `AWS_KNOWLEDGE_MCP_URL` if you proxy the service.
-   - Provide `TAVILY_API_KEY` (and optionally `TAVILY_MCP_LINK`) to enable live web search via Tavily. The link is optional; if omitted we fall back to `https://mcp.tavily.com/mcp/?tavilyApiKey=<key>`.
+  - Provide `TAVILY_API_KEY` to enable live web search via Tavily. (Optional) Override the API host with `TAVILY_API_BASE_URL`.
    - The AWS Diagram MCP now runs co-located by default. Ensure `uv` (Astral) and Graphviz are installed so `uvx awslabs.aws-diagram-mcp-server` can execute. Only set `AWS_DIAGRAM_MCP_MODE=remote` (and `AWS_DIAGRAM_MCP_URL`) if you want to hit an external HTTP bridge; otherwise no additional configuration is required.
    - (Optional) Configure long-term memory with SQLite. Download the [`sqlite-vec`](https://github.com/asg017/sqlite-vec) extension and set `SQLITE_VEC_PATH` to the shared library so cosine search can be performed inside the database. The SQLite database lives at `data/app.db` and is created automatically.
    - AWS, GitHub, and Claude settings when those integrations come online.

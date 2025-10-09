@@ -3,7 +3,8 @@ import {
   getOptionalEnv,
   isAwsKnowledgeMcpEnabled,
   isExcalidrawMcpEnabled,
-  isTavilyMcpEnabled,
+  isPerplexityApiEnabled,
+  isTavilyApiEnabled,
 } from '@/lib/config/env';
 import { getVoiceAgentTools } from '@/lib/openai/tools';
 import { VOICE_AGENT_INSTRUCTIONS, VOICE_AGENT_TOOLS } from '@/lib/openai/prompt';
@@ -79,7 +80,8 @@ export async function createOpenAIRealtimeSession(options: CreateRealtimeOptions
       tools: getVoiceAgentTools({
         includeExcalidrawMcp: isExcalidrawMcpEnabled(),
         includeAwsKnowledge: isAwsKnowledgeMcpEnabled(),
-        includeTavily: isTavilyMcpEnabled(),
+        includeTavily: isTavilyApiEnabled(),
+        includePerplexity: isPerplexityApiEnabled(),
       }),
     }),
   });

@@ -2,62 +2,41 @@
 
 Welcome aboard! This log captures the current state of the Virtual Solutions Architect project and the next items in flight. Use it to ramp quickly and avoid duplicating work.
 
-## Quick Status
-- Voice agent → OpenAI Realtime pipeline is functioning: WebRTC handshake, audio streaming, transcripts, and function calls all succeed. Memory persistence is in progress—session summaries are supposed to be written at hang-up, but we still need to confirm they survive across restarts.
-- Mermaid diagrams render reliably in the preview when the agent calls `canvas_update_mermaid`.
-- Excalidraw MCP runs in-process by default. Structured operations (`create_elements`, `update_element`, `delete_element`, `clear_scene`) are normalised locally and rendered directly on the canvas preview. Labels now render like text blocks with font size/family support.
-- AWS Knowledge MCP integration is available behind the `AWS_KNOWLEDGE_MCP_ENABLED` flag. When enabled, the agent can search (`aws_knowledge_search`), read (`aws_knowledge_read`), and recommend (`aws_knowledge_recommend`) official guidance.
-- Tavily MCP integration is now wired: if `TAVILY_API_KEY` (or `TAVILY_MCP_LINK`) is present, the voice agent can run real-time search (`tavily_search`), extraction (`tavily_extract`), crawls (`tavily_crawl`), and site maps (`tavily_map`). Responses are trimmed (max 3 links + optional summary), defaults enforce light payloads, and the results are injected into the Realtime context (tool result when a `call_id` is present, otherwise as a system memo) so the assistant can quote the URLs it just fetched.
-- Long-lived conversations now flow through a SQLite-backed memory layer: session context is fetched before each call, summaries/TODOs are persisted at the end, and (when the `sqlite-vec` extension is available) highlights are embedded for cosine retrieval on the next visit. As of 2025‑10‑05 we still see `hasSummary: false`, so double-check the summarizer pipeline.
+## Quick Status (2025-10-06)
+- Voice agent ↔ OpenAI Realtime: WebRTC, audio streaming, transcripts, and local tool calls (canvas + Excalidraw MCP + AWS Diagram MCP) are solid. User drag updates on the embedded Excalidraw canvas sync back to the server correctly.
+- **Search/knowledge issue:** Although Tavily REST calls and AWS Knowledge MCP requests are firing, the assistant keeps telling the user that no results are available. Event logs show successful tool responses (`tavily.result`, etc.), so the bug lives in how we surface those results back into the conversation (likely missing `response.create` follow-up or memo ingestion). This is the top debugging task for the next session.
+- Memory layer: SQLite summaries/TODOs are still intermittently missing (`hasSummary: false`). Vector search remains disabled because `sqlite-vec` warns that JSON helpers are unavailable. Investigate once the search issue is resolved.
+- Mermaid preview continues to render `canvas_update_mermaid` output. AWS diagrams now arrive as single PNG images that land on the Excalidraw canvas when the diagram MCP succeeds.
 
-### Files for investigation (memory regression)
-- `src/components/voice/VoiceSessionPanel.tsx`: emits `memory.summary` / `memory.error` events and calls `/api/conversation/summarize` on hang-up.
-- `src/app/api/conversation/summarize/route.ts`: server entry point that writes summaries via `processConversationTranscript`.
-- `src/lib/conversation/processor.ts`: calls OpenAI (fallback to local summary), then persists state + memory rows.
-- `src/lib/memory/vectorStore.ts`: handles SQLite inserts, embeddings, vector fallback.
-- `src/lib/db/sqlite.ts`: migrations, sqlite-vec load, metadata column guard.
-- `data/app.db`: inspect tables `conversation_state` and `memory_summary` after a call.
-- AWS Diagram MCP now runs co-located by default. The API route spawns `uvx awslabs.aws-diagram-mcp-server` and converts the result into a base64 PNG for the canvas. Switch to a remote HTTP bridge by setting `AWS_DIAGRAM_MCP_MODE=remote` plus `AWS_DIAGRAM_MCP_URL` if needed.
-- Remote Excalidraw MCP wrappers remain optional—set `EXCALIDRAW_MCP_MODE=remote` if you need to hit an external server. Otherwise, no HTTP bridge is required.
-- Canvas preview now supports dragging shapes with the pointer, including arrow endpoints for quick resizing. User drags emit `update_element` operations so the shared scene stays in sync.
-- Excalidraw MCP calls default to an in-process implementation; remote HTTP mode is still available by setting `EXCALIDRAW_MCP_MODE=remote`.
+## Immediate Next Steps
+1. **Debug Tavily / AWS Knowledge follow-up**
+   - Inspect `src/lib/openai/events.ts` and `src/components/voice/VoiceSessionPanel.tsx` to ensure tool results trigger a `response.create` (or memo) that the assistant can read.
+   - Confirm we are not overwriting tool outputs with `status: "error"` when the canvas sync fires (check `src/app/api/canvas/events/route.ts` and any follow-up logic in the UI).
+   - Re-run a voice session: ask for "Top story on Hacker News" and verify that the agent quotes URLs after the tool completes.
+2. Verify hosted AWS Knowledge MCP behavior once Tavily is working—same mechanism, so fixes should apply to both.
+3. Circle back to the SQLite/vector warnings and the lingering Mermaid lint cleanup once search is reliable.
 
-## Priority Files to Review
-- `README.md` – stack overview and setup expectations.
-- `docs/agent_tools.md` – authoritative reference for tool schemas exposed to the agent.
-- `docs/voice_prompt_instructions.md` – conversational guidelines embedded in the realtime prompt.
-- `src/lib/openai/prompt.ts` – live prompt text + tool definitions shipped to OpenAI.
-- `src/lib/openai/events.ts` – parses realtime control messages and surfaces function calls.
-- `src/components/voice/VoiceSessionPanel.tsx` – browser UI: starts sessions, handles control channel output, posts canvas commands, logs debug events.
-- `src/app/api/canvas/events/route.ts` – REST endpoint that records commands and normalizes Excalidraw payloads into operations.
-- `src/lib/canvas/{server,excalidrawState,bridge}.ts` – in-memory storage, shape normalization, and function-call translation glue.
-- `src/components/canvas/{MermaidPreview,ExcalidrawPreview}.tsx` – render the current diagrams on the page.
+## Fast Ramp-up Checklist
+- Skim `README.md` for environment setup, tool toggles, and the current stack (Next.js + Fast refresh + in-process MCP servers).
+- Read `docs/agent_tools.md` and `docs/voice_prompt_instructions.md` to understand which functions the agent can call and the rules baked into the system prompt.
+- Review `src/lib/openai/prompt.ts` (tool declarations + voice instructions) and `src/lib/openai/events.ts` (parses realtime messages, dispatches tool handlers).
+- Open `src/components/voice/VoiceSessionPanel.tsx`; this is the main UI controller: session lifecycle, logging, popup windows for transcripts/events, and post-processing of tool output.
+- For canvas behavior, check `src/lib/canvas/{bridge,excalidrawState,server}.ts` plus the API routes in `src/app/api/canvas/*`.
 
-## New Capability: AWS Knowledge + Tavily + AWS Diagram MCP Integrations
-The hosted `aws-knowledge-mcp-server` runs behind `POST /api/mcp/aws-knowledge`, the Tavily MCP server lives at `POST /api/mcp/tavily`, and the AWS Diagram wrapper is proxied via `POST /api/mcp/aws-diagram`. Function tools are added dynamically based on environment toggles:
-- `aws_knowledge_search`, `aws_knowledge_read`, `aws_knowledge_recommend` when `AWS_KNOWLEDGE_MCP_ENABLED=true`.
-- `tavily_search`, `tavily_extract`, `tavily_crawl`, `tavily_map` when `TAVILY_API_KEY` or `TAVILY_MCP_LINK` is present.
-- `aws_generate_diagram`, `aws_list_diagram_icons`, `aws_get_diagram_examples` when `AWS_DIAGRAM_MCP_URL` is configured.
+## Key Files for the Search Bug
+- `src/lib/openai/events.ts` – look at `handleToolResult`/`handleToolError` flows.
+- `src/components/voice/VoiceSessionPanel.tsx` – `onToolCall` / `onToolResult` wiring and the logic that posts follow-up messages.
+- `src/lib/mcp/tavily.ts`, `src/lib/mcp/awsKnowledge.ts` – ensure we normalize the response payloads before returning them to the UI.
+- `docs/agent_tools.md` – confirm prompt instructions tell the model how to use the new tools.
 
-### Highlights
-- Environment toggles and defaults live in `src/lib/config/env.ts`.
-- The proxy clients (`src/lib/mcp/awsKnowledge.ts`, `src/lib/mcp/tavily.ts`) perform JSON-RPC/SSE calls and normalize responses for the UI.
-- `VoiceSessionPanel` surfaces request/result/error events for all external workflows and renders diagram PNGs inline when returned from the AWS Diagram wrapper.
-- Prompt docs (`docs/voice_prompt_instructions.md`, `docs/agent_tools.md`) and runtime instructions have been updated to teach the agent when to call each tool.
-- The AWS diagram bridge lives at `src/app/api/mcp/aws-diagram/route.ts` and reuses the shared `X-API-Key` header, allowing hosted MCP servers to plug in without changing the voice UI.
-
-### Follow-up Ideas
-1. Feed high-signal answers back into the conversation automatically (e.g., append a note or summarize the top result before asking the user to continue).
-2. Add guards for rate limiting and better error differentiation (e.g., 429 vs malformed input) for both MCP proxies.
-3. Capture tool outputs in session state so future turns can reference earlier research without re-querying.
-
-## Canvas Follow-ups (still open)
-- Monitor future tool calls for unexpected element types; the local mapper now accepts rectangles, ellipses, diamonds, arrows, lines, freehand strokes, text, labels, and images.
-- Consider lightweight unit tests around `normalizeAdHocOperation` and the new AWS diagram mapper to guard against regressions once additional MCP features enter the mix.
+## Other Open Threads
+- SQLite memory pipeline: `src/app/api/conversation/summarize/route.ts`, `src/lib/conversation/processor.ts`, `data/app.db` (check `conversation_state` + `memory_summary` tables). Address once search is fixed.
+- ESLint warning in `src/components/canvas/MermaidPreview.tsx` regarding `svgContainerRef` cleanup.
+- Tests: still no automated coverage for the new popup streaming logic or canvas normalization routines.
 
 ## Handy Debug Tips
-- Watch the DevTools console for `[canvas]` logs from `/api/canvas/events` to see how operations are interpreted.
-- The event log UI in `VoiceSessionPanel` shows `canvas.warning` entries whenever normalization falls back—helpful for spotting malformed payloads.
-- `GET /api/canvas/excalidraw?sessionId=primary-session` returns the current scene JSON; use it to confirm shapes are being stored as expected.
+- DevTools console displays `[tool]`, `[canvas]`, and `[memory]` logs; keep it open during sessions.
+- The popup transcript/event windows now live-update. If nothing appears, check for blockers (pop-up permissions, window closed detection in `VoiceEventLog.tsx`).
+- `GET /api/canvas/excalidraw?sessionId=primary-session` returns the current scene JSON for inspection.
 
 Keep this document updated as you land features or uncover blockers. Thanks!
