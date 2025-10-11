@@ -20,6 +20,7 @@ export type RealtimeEventHandlers = {
     callId?: string;
   }) => void;
   onDebugEvent?: (event: RealtimeEvent) => void;
+  onError?: (payload: { message?: string; code?: string; param?: string; raw: Record<string, unknown> }) => void;
 };
 
 const EXTERNAL_TOOL_NAMES = new Set([
@@ -126,6 +127,16 @@ export function parseRealtimeEvent(
   });
 
   switch (type) {
+    case 'error': {
+      const errorPayload = parsed?.error && typeof parsed.error === 'object' ? parsed.error : {};
+      handlers.onError?.({
+        message: typeof errorPayload?.message === 'string' ? (errorPayload.message as string) : undefined,
+        code: typeof errorPayload?.code === 'string' ? (errorPayload.code as string) : undefined,
+        param: typeof errorPayload?.param === 'string' ? (errorPayload.param as string) : undefined,
+        raw: parsed,
+      });
+      break;
+    }
     case 'conversation.item.input_audio_transcription.delta': {
       const itemId = parsed?.item?.id ?? parsed?.item_id;
       if (itemId) {

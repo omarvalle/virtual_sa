@@ -135,3 +135,11 @@ export function getAwsDiagramMcpMode(): 'local' | 'remote' {
 export function getMcpServiceApiKey(): string | undefined {
   return getOptionalEnv('MCP_SERVICE_API_KEY') ?? getOptionalEnv('CANVAS_API_KEY');
 }
+
+export function getPublicAppUrl(): string | undefined {
+  const explicit = getOptionalEnv('APP_BASE_URL') ?? getOptionalEnv('NEXT_PUBLIC_APP_URL');
+  if (!explicit) {
+    return undefined;
+  }
+  return explicit.replace(/\/$/, '');
+}

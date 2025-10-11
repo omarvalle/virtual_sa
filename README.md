@@ -26,12 +26,33 @@ Voice-first web application that blends OpenAI's realtime agents with AWS Bedroc
   - Provide `TAVILY_API_KEY` to enable live web search via Tavily. (Optional) Override the API host with `TAVILY_API_BASE_URL`.
    - The AWS Diagram MCP now runs co-located by default. Ensure `uv` (Astral) and Graphviz are installed so `uvx awslabs.aws-diagram-mcp-server` can execute. Only set `AWS_DIAGRAM_MCP_MODE=remote` (and `AWS_DIAGRAM_MCP_URL`) if you want to hit an external HTTP bridge; otherwise no additional configuration is required.
    - (Optional) Configure long-term memory with SQLite. Download the [`sqlite-vec`](https://github.com/asg017/sqlite-vec) extension and set `SQLITE_VEC_PATH` to the shared library so cosine search can be performed inside the database. The SQLite database lives at `data/app.db` and is created automatically.
+   - To stream desktop captures to the realtime agent, expose your dev server over HTTPS and set `APP_BASE_URL` (or `NEXT_PUBLIC_APP_URL`) to the public origin. See **Screen Share over HTTPS** below for an ngrok walkthrough.
    - AWS, GitHub, and Claude settings when those integrations come online.
 4. **Run the development server**:
    ```bash
    npm run dev
    ```
 5. Open [http://localhost:3000](http://localhost:3000) to access the interface.
+
+## Screen Share over HTTPS
+
+The realtime API will only ingest `input_image` URLs served over HTTPS. During local development you can tunnel your Next.js server with ngrok (or any similar tool) and forward that origin to the app:
+
+1. Install ngrok and sign in so HTTPS tunnels are enabled: <https://ngrok.com/download>.
+2. Start the tunnel against your dev server port:
+   ```bash
+   ngrok http --domain=<your-subdomain>.ngrok.app 3000
+   ```
+   ngrok will print a public `https://...ngrok.app` URL.
+3. Export that domain before launching the Next.js server so screenshot routes build absolute URLs:
+   ```bash
+   export APP_BASE_URL="https://<your-subdomain>.ngrok.app"
+   npm run dev
+   ```
+   (If you prefer, add the variable to `.env.local` instead of exporting it each time.)
+4. When you toggle screen sharing in the UI, frames are now saved to `data/screenshots` and streamed to the model using the HTTPS ngrok link. The control channel stays open because only the URL is sent—no more multi-hundred-kilobyte base64 payloads.
+
+Remember to restart `npm run dev` whenever the public tunnel URL changes.
 
 ## Voice Workflow Roadmap
 

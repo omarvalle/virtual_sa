@@ -1,7 +1,7 @@
 'use client';
 
 import type { CSSProperties } from 'react';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { VoiceSessionHandles } from '@/lib/openai/realtimeClient';
 import { createRealtimeSession } from '@/lib/openai/realtimeClient';
 import { postCanvasCommands } from '@/lib/canvas/client';
@@ -17,6 +17,10 @@ const panelStyles: CSSProperties = {
 
 const MAX_EVENTS = 50;
 const SESSION_ID = 'primary-session';
+const CAPTURE_INTERVAL_MS = 2000;
+const MAX_CAPTURE_WIDTH = 1280;
+const MAX_CAPTURE_HEIGHT = 720;
+const JPEG_QUALITY = 0.7;
 
 function randomId(fallback?: string) {
   if (fallback) return fallback;
@@ -110,6 +114,15 @@ export function VoiceSessionPanel() {
   const [events, setEvents] = useState<VoiceDebugEvent[]>([]);
   const contextInstructionsRef = useRef<string | null>(null);
   const controlChannelRef = useRef<RTCDataChannel | null>(null);
+  const screenVideoRef = useRef<HTMLVideoElement | null>(null);
+  const screenStreamRef = useRef<MediaStream | null>(null);
+  const screenIntervalRef = useRef<number | null>(null);
+  const captureInFlightRef = useRef(false);
+  const lastFrameRef = useRef<{ base64: string; capturedAt: string } | null>(null);
+  const lastFallbackAtRef = useRef<string | null>(null);
+  const imageUrlFailedRef = useRef(false);
+  const [isScreenShareActive, setScreenShareActive] = useState(false);
+  const isScreenShareActiveRef = useRef(false);
 
   const statusLabel = useMemo(() => {
     switch (status) {
@@ -331,6 +344,276 @@ export function VoiceSessionPanel() {
     },
     [appendEvent, sendToolEnvelope],
   );
+
+  useEffect(() => {
+    isScreenShareActiveRef.current = isScreenShareActive;
+  }, [isScreenShareActive]);
+
+  const stopScreenShare = useCallback(() => {
+    if (screenIntervalRef.current !== null) {
+      window.clearInterval(screenIntervalRef.current);
+      screenIntervalRef.current = null;
+    }
+    captureInFlightRef.current = false;
+
+    const stream = screenStreamRef.current;
+    if (stream) {
+      stream.getTracks().forEach((track) => track.stop());
+      screenStreamRef.current = null;
+    }
+
+    const video = screenVideoRef.current;
+    if (video) {
+      video.pause();
+      video.srcObject = null;
+    }
+
+    const wasActive = isScreenShareActiveRef.current;
+    if (wasActive) {
+      appendEvent({
+        id: randomId(),
+        type: 'screenshot.stop',
+        label: 'Screen share stopped.',
+        timestamp: Date.now(),
+      });
+    }
+    lastFrameRef.current = null;
+    lastFallbackAtRef.current = null;
+    imageUrlFailedRef.current = false;
+    setScreenShareActive(false);
+    isScreenShareActiveRef.current = false;
+  }, [appendEvent]);
+
+  const captureFrame = useCallback(async () => {
+    if (status !== 'active') {
+      return;
+    }
+    if (captureInFlightRef.current) {
+      return;
+    }
+
+    if (!screenStreamRef.current) {
+      return;
+    }
+
+    const video = screenVideoRef.current;
+    if (!video) {
+      return;
+    }
+    if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+      return;
+    }
+
+    captureInFlightRef.current = true;
+
+    try {
+      const sourceWidth = video.videoWidth || MAX_CAPTURE_WIDTH;
+      const sourceHeight = video.videoHeight || MAX_CAPTURE_HEIGHT;
+      if (!sourceWidth || !sourceHeight) {
+        return;
+      }
+
+      const scale = Math.min(MAX_CAPTURE_WIDTH / sourceWidth, MAX_CAPTURE_HEIGHT / sourceHeight, 1);
+      const width = Math.max(1, Math.round(sourceWidth * scale));
+      const height = Math.max(1, Math.round(sourceHeight * scale));
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext('2d');
+      if (!context) {
+        throw new Error('Unable to acquire drawing context for screen capture.');
+      }
+      context.drawImage(video, 0, 0, width, height);
+
+      const dataUrl = canvas.toDataURL('image/jpeg', JPEG_QUALITY);
+      const base64 = dataUrl.split(',')[1];
+      if (!base64) {
+        throw new Error('Failed to encode screen capture to base64.');
+      }
+
+      const capturedAt = new Date().toISOString();
+      const response = await fetch('/api/screenshots', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          sessionId: SESSION_ID,
+          imageBase64: base64,
+          mimeType: 'image/jpeg',
+          capturedAt,
+          description: `Screen capture at ${capturedAt}`,
+          source: 'screen-share',
+        }),
+      });
+
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || !body?.success) {
+        const message = body?.message ?? 'Screenshot persistence failed.';
+        throw new Error(message);
+      }
+
+      const assetRecord = body.asset as { id?: string; path?: string } | undefined;
+      const publicUrl = typeof body?.publicUrl === 'string' ? body.publicUrl : undefined;
+      lastFrameRef.current = { base64, capturedAt };
+      lastFallbackAtRef.current = null;
+
+      const assetLabel = assetRecord?.id
+        ? `Asset ${assetRecord.id} saved to ${assetRecord.path ?? 'unknown path'}.`
+        : 'Screenshot frame stored.';
+
+      appendEvent({
+        id: randomId(),
+        type: 'screenshot.saved',
+        label: assetLabel,
+        timestamp: Date.now(),
+      });
+
+      if (controlChannelRef.current?.readyState === 'open') {
+        let imageContent: { type: 'input_image'; image_url: string; detail?: 'low' | 'high' | 'auto' };
+
+        if (!imageUrlFailedRef.current && publicUrl && publicUrl.startsWith('https://')) {
+          imageContent = {
+            type: 'input_image',
+            image_url: publicUrl,
+            detail: 'auto',
+          };
+
+        } else {
+          appendEvent({
+            id: randomId(),
+            type: 'screenshot.error',
+            label: imageUrlFailedRef.current
+              ? 'image_url delivery disabled; sending base64 payload instead.'
+              : 'Screenshot not exposed over HTTPS; falling back to base64 payload.',
+            timestamp: Date.now(),
+          });
+
+          const dataUri = `data:image/jpeg;base64,${base64}`;
+          imageContent = {
+            type: 'input_image',
+            image_url: dataUri,
+            detail: 'auto',
+          };
+        }
+
+        sendToolEnvelope({
+          type: 'conversation.item.create',
+          item: {
+            type: 'message',
+            role: 'user',
+            content: [
+              {
+                type: 'input_text',
+                text: `Here is the latest desktop capture from ${capturedAt}.`,
+              },
+              imageContent,
+            ],
+          },
+        });
+      }
+    } catch (error) {
+      appendEvent({
+        id: randomId(),
+        type: 'screenshot.error',
+        label: error instanceof Error ? error.message : 'Failed to capture screen frame.',
+        timestamp: Date.now(),
+      });
+    } finally {
+      captureInFlightRef.current = false;
+    }
+  }, [appendEvent, sendToolEnvelope, status]);
+
+  const startScreenShare = useCallback(async () => {
+    if (status !== 'active') {
+      appendEvent({
+        id: randomId(),
+        type: 'screenshot.error',
+        label: 'Screen sharing requires an active voice session.',
+        timestamp: Date.now(),
+      });
+      return;
+    }
+
+    if (isScreenShareActive) {
+      return;
+    }
+
+    try {
+      imageUrlFailedRef.current = false;
+      const mediaStream = await navigator.mediaDevices.getDisplayMedia({
+        audio: false,
+        video: {
+          frameRate: 5,
+          width: { ideal: MAX_CAPTURE_WIDTH },
+          height: { ideal: MAX_CAPTURE_HEIGHT },
+        },
+      });
+
+      screenStreamRef.current = mediaStream;
+      captureInFlightRef.current = false;
+
+      const video = screenVideoRef.current;
+      if (video) {
+        video.srcObject = mediaStream;
+        try {
+          await video.play();
+        } catch (playError) {
+          console.warn('Unable to autoplay screen share video element.', playError);
+        }
+      }
+
+      mediaStream.getVideoTracks().forEach((track) => {
+        track.addEventListener('ended', () => {
+          stopScreenShare();
+        });
+      });
+
+      if (screenIntervalRef.current !== null) {
+        window.clearInterval(screenIntervalRef.current);
+      }
+
+      screenIntervalRef.current = window.setInterval(() => {
+        void captureFrame();
+      }, CAPTURE_INTERVAL_MS);
+
+      if (video) {
+        if (video.readyState >= HTMLMediaElement.HAVE_METADATA) {
+          void captureFrame();
+        } else {
+          const handleLoaded = () => {
+            video.removeEventListener('loadeddata', handleLoaded);
+            void captureFrame();
+          };
+          video.addEventListener('loadeddata', handleLoaded);
+        }
+      }
+
+      setScreenShareActive(true);
+      isScreenShareActiveRef.current = true;
+      appendEvent({
+        id: randomId(),
+        type: 'screenshot.start',
+        label: 'Screen share started.',
+        timestamp: Date.now(),
+      });
+    } catch (error) {
+      appendEvent({
+        id: randomId(),
+        type: 'screenshot.error',
+        label: error instanceof Error ? error.message : 'Screen share request was denied.',
+        timestamp: Date.now(),
+      });
+      stopScreenShare();
+    }
+  }, [appendEvent, captureFrame, isScreenShareActive, status, stopScreenShare]);
+
+  useEffect(() => {
+    return () => {
+      stopScreenShare();
+    };
+  }, [stopScreenShare]);
 
   const resumeAfterTool = useCallback(
     (toolName: string, context?: string) => {
@@ -735,6 +1018,57 @@ export function VoiceSessionPanel() {
             timestamp: Date.now(),
           });
         },
+        onError: (errorInfo) => {
+          const label = JSON.stringify(errorInfo.raw, null, 2);
+          appendEvent({
+            id: `err_${Date.now()}`,
+            type: 'realtime.error',
+            label,
+            timestamp: Date.now(),
+          });
+
+          const message = errorInfo.message ?? '';
+          if (message.toLowerCase().includes('image_url')) {
+            imageUrlFailedRef.current = true;
+            const lastFrame = lastFrameRef.current;
+            if (!lastFrame) {
+              return;
+            }
+
+            if (lastFallbackAtRef.current === lastFrame.capturedAt) {
+              return;
+            }
+
+            appendEvent({
+              id: randomId(),
+              type: 'screenshot.error',
+              label: 'Realtime service rejected image_url payload; retrying with base64.',
+              timestamp: Date.now(),
+            });
+
+            if (controlChannelRef.current?.readyState === 'open') {
+              sendToolEnvelope({
+                type: 'conversation.item.create',
+                item: {
+                  type: 'message',
+                  role: 'user',
+                  content: [
+                    {
+                      type: 'input_text',
+                      text: `Here is the latest desktop capture from ${lastFrame.capturedAt}.`,
+                    },
+                    {
+                      type: 'input_image',
+                      image_url: `data:image/jpeg;base64,${lastFrame.base64}`,
+                      detail: 'auto',
+                    },
+                  ],
+                },
+              });
+              lastFallbackAtRef.current = lastFrame.capturedAt;
+            }
+          }
+        },
         onTranscriptionDelta: (itemId, delta) => {
           upsertBuffer(userBuffer.current, itemId, 'user', delta);
         },
@@ -893,7 +1227,7 @@ export function VoiceSessionPanel() {
         },
       });
     },
-    [appendEvent, finalizeTranscript, handleExternalToolCall, upsertBuffer],
+    [appendEvent, finalizeTranscript, handleExternalToolCall, sendToolEnvelope, upsertBuffer],
   );
 
   const handleRemoteTrack = useCallback((event: RTCTrackEvent) => {
@@ -915,6 +1249,7 @@ export function VoiceSessionPanel() {
 
   const toggleSession = useCallback(async () => {
     if (status === 'active') {
+      stopScreenShare();
       await persistSessionSummary(transcripts);
       sessionHandles?.localStream.getTracks().forEach((track) => track.stop());
       sessionHandles?.peerConnection.close();
@@ -987,6 +1322,7 @@ export function VoiceSessionPanel() {
             timestamp: Date.now(),
           });
           controlChannelRef.current = null;
+          stopScreenShare();
         });
         controlChannelRef.current.addEventListener('error', (event) => {
           appendEvent({
@@ -1011,6 +1347,7 @@ export function VoiceSessionPanel() {
     handleRemoteTrack,
     loadSessionContext,
     persistSessionSummary,
+    stopScreenShare,
     sessionHandles,
     status,
     transcripts,
@@ -1044,7 +1381,33 @@ export function VoiceSessionPanel() {
           {status === 'active' ? 'End Voice Session' : 'Start Voice Session'}
         </button>
 
+        {status === 'active' ? (
+          <button
+            type="button"
+            onClick={() => {
+              if (isScreenShareActive) {
+                stopScreenShare();
+              } else {
+                void startScreenShare();
+              }
+            }}
+            style={{
+              marginLeft: '0.75rem',
+              padding: '0.75rem 1.5rem',
+              borderRadius: '999px',
+              border: 'none',
+              cursor: 'pointer',
+              background: isScreenShareActive ? '#f97316' : '#22c55e',
+              color: '#0f172a',
+              fontWeight: 600,
+            }}
+          >
+            {isScreenShareActive ? 'Stop Screen Share' : 'Start Screen Share'}
+          </button>
+        ) : null}
+
         <audio ref={remoteAudioRef} autoPlay playsInline hidden />
+        <video ref={screenVideoRef} muted playsInline style={{ display: 'none' }} />
       </article>
 
       <VoiceEventLog transcripts={transcripts} events={events} />
